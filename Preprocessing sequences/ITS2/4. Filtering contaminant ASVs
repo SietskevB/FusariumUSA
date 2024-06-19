@@ -1,0 +1,116 @@
+# Qiime2 2022.11
+
+# Filtering dataset
+# After determining contaminant ASVs
+ 
+# Create .biom to import in Qiime2
+echo -n "#OTU Table" | cat - USFall-ITS2-featuretable-decontam-output.txt > USFall-ITS2-featuretable-decontam-output-biom.txt
+biom convert -i USFall-ITS2-featuretable-decontam-output-biom.txt -o USFall-ITS2-featuretable-decontam-output.biom --table-type="OTU table" --to-hdf5
+
+# Import feature table without contaminant ASVs
+qiime tools import \
+--input-path USFall-ITS2-featuretable-decontam-output.biom \
+--type 'FeatureTable[Frequency]' \
+--input-format BIOMV210Format \
+--output-path repseqtable-USFall-ITS2-decontam.qza
+
+# Make visualization file
+qiime feature-table summarize \
+  --i-table repseqtable-USFall-ITS2-decontam.qza \
+  --o-visualization repseqtable-USFall-ITS2-decontam.qzv 
+
+# 287 samples, 10,652 features, 20.9M reads
+# 191 - 195,842 reads/sample
+
+
+# Filter blank samples
+qiime feature-table filter-samples \
+  --i-table repseqtable-USFall-ITS2-decontam.qza \
+  --m-metadata-file USFall-ITS2-metadata-noblank-decontam.txt \
+  --o-filtered-table repseqtable-filtered-USFall-ITS2-decontam.qza
+  
+# Make visualization file
+qiime feature-table summarize \
+  --i-table repseqtable-filtered-USFall-ITS2-decontam.qza \
+  --o-visualization repseqtable-filtered-USFall-ITS2-decontam.qzv 
+  
+qiime taxa barplot \
+  --i-table repseqtable-filtered-USFall-ITS2-decontam.qza \
+  --i-taxonomy classification-UNITE3-ITS2-USFall.qza \
+  --m-metadata-file USFall-ITS2-metadata-noblank-decontam.txt \
+  --o-visualization barplot-filtered-UNITE3-USFall-ITS2.qzv  
+
+
+# Filter non-fungal ASVs
+qiime taxa filter-table \
+  --i-table repseqtable-filtered-USFall-ITS2-decontam.qza \
+  --i-taxonomy classification-UNITE3-ITS2-USFall.qza \
+  --p-exclude k__Viridiplantae,k__Protista,Unassigned,k__Rhizaria,k__Metazoa,k__Alveolata,k__unidentified \
+  --o-filtered-table repseqtable-filtered-UNITE3-USFall-ITS2
+
+qiime feature-table summarize \
+  --i-table repseqtable-filtered-UNITE3-USFall-ITS2.qza \
+  --o-visualization repseqtable-filtered-UNITE3-USFall-ITS2.qzv  
+  
+qiime taxa barplot \
+  --i-table repseqtable-filtered-UNITE3-USFall-ITS2.qza \
+  --i-taxonomy classification-UNITE3-ITS2-USFall.qza \
+  --m-metadata-file USFall-ITS2-metadata-noblank-decontam.txt \
+  --o-visualization barplot-filtered-UNITE3-USFall-ITS2.qzv
+  
+# 274 samples, 3,093 features, 9.99M reads
+# 74 - 149,086 reads/sample
+
+
+# Filter rare ASVs based on low occurrence and cumulative abundance
+qiime tools export \
+  --input-path repseqtable-filtered-UNITE3-USFall-ITS2.qza \
+  --output-path repseqtable-filtered-UNITE3-USFall-ITS2
+  
+cd repseqtable-filtered-UNITE3-USFall-ITS2  
+
+biom convert -i feature-table.biom -o repseqtable-filtered-UNITE3-USFall-ITS2.txt --to-tsv
+
+# Saved all changes to repseqtable-filtered-UNITE3-USfall-ITS2-edits.xlsx
+
+# Filtered ASVs with n < 4
+# And ASVs < 53 reads across all samples (cumulative abundance)
+qiime feature-table filter-features \
+  --i-table repseqtable-filtered-UNITE3-USFall-ITS2.qza \
+  --p-min-samples 4 \
+  --p-min-frequency 53 \
+  --o-filtered-table repseqtable-filtered-n4-53-UNITE3-USFall-ITS2.qza
+  
+qiime feature-table summarize \
+  --i-table repseqtable-filtered-n4-53-UNITE3-USFall-ITS2.qza \
+  --o-visualization repseqtable-filtered-n4-53-UNITE3-USFall-ITS2.qzv  
+  
+qiime taxa barplot \
+  --i-table repseqtable-filtered-n4-53-UNITE3-USFall-ITS2.qza \
+  --i-taxonomy classification-UNITE3-ITS2-USFall.qza \
+  --m-metadata-file USFall-ITS2-metadata-noblank-decontam.txt \
+  --o-visualization barplot-filtered-n4-53-UNITE3-USFall-ITS2.qzv  
+    
+# 274 samples, 254 ASVs, 7.4M reads
+# 37 - 130,679 reads/sample
+  
+
+############################################################################################################################
+
+
+# Export data for use in R
+
+# Incl. bulk samples
+qiime tools export \
+  --input-path repseqtable-filtered-n4-53-UNITE3-USFall-ITS2.qza \
+  --output-path repseqtable-filtered-n4-53-UNITE3-USFall-ITS2
+  
+cd repseqtable-filtered-n4-53-UNITE3-USFall-ITS2 
+
+biom convert -i feature-table.biom -o repseqtable-filtered-n4-53-UNITE3-USFall-ITS2.txt --to-tsv
+
+# Make sure that top empty row is not present
+# Add taxonomy as new column
+# Transform into .biom
+
+biom convert -i repseqtable-filtered-n4-53-UNITE3-USFall-ITS2-taxonomy.txt -o repseqtable-filtered-n4-53-UNITE3-USFall-ITS2-taxonomy.biom --table-type="OTU table" --to-hdf5   
