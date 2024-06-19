@@ -1,0 +1,89 @@
+# Qiime2 2022.11
+
+# Trimmed, filtered sequences, exported after DADA2
+qiime tools import \
+--input-path USFall-ITS2-repseqs-hash.fasta \
+--type 'FeatureData[Sequence]' \
+--output-path repseq-ITS2-USFall.qza
+
+# Feature table
+echo -n "#OTU Table" | cat - USFall-ITS2-featuretable-hash.txt > USFall-ITS2-featuretable-biom.txt
+
+biom convert -i USFall-ITS2-featuretable-biom.txt -o USFall-ITS2-featuretable.biom --table-type="OTU table" --to-hdf5
+
+qiime tools import \
+--input-path USFall-ITS2-featuretable.biom \
+--type 'FeatureTable[Frequency]' \
+--input-format BIOMV210Format \
+--output-path repseqtable-ITS2-USFall.qza
+
+
+# Make visualization files
+qiime feature-table summarize \
+  --i-table repseqtable-ITS2-USFall.qza \
+  --o-visualization repseqtable-ITS2-USFall.qzv 
+
+# Visualizing sequences 
+qiime feature-table tabulate-seqs \
+  --i-data repseq-ITS2-USFall.qza \
+  --o-visualization repseq-ITS2-USFall.qzv    
+  
+# 287 samples, 10,825 features, 31.26M reads
+# 560 - 229,872 reads/sample
+
+# Blank 4 and 8 contaminated; more than 39k reads each
+
+
+############################################################################################################################
+
+
+# Taxonomy assignment
+# UNITE 8.3 
+# Developer version
+
+# UNITE sequences
+qiime tools import \
+ --type FeatureData[Sequence] \
+ --input-path sh_refs_qiime_ver8_dynamic_all_10.05.2021_dev.fasta \
+ --output-path unite-ver83-seqs-10.05.2021.qza
+ 
+qiime tools import \
+ --type FeatureData[Taxonomy] \
+ --input-path sh_taxonomy_qiime_ver8_dynamic_all_10.05.2021_dev.txt \
+ --output-path unite-ver83-tax-10.05.2021.qza \
+ --input-format HeaderlessTSVTaxonomyFormat 
+
+# Fit a classifier to UNITE database
+# Did NOT extract or trim reads from this database (see note at bottom of https://docs.qiime2.org/2019.10/tutorials/feature-classifier/)
+qiime feature-classifier fit-classifier-naive-bayes \
+ --i-reference-reads unite-ver83-seqs-10.05.2021.qza \
+ --i-reference-taxonomy unite-ver83-tax-10.05.2021.qza \
+ --o-classifier unite-ver83-classifier-10.05.2021-july2023.qza 
+ 
+# Annotate ITS2 reads
+qiime feature-classifier classify-sklearn \
+  --i-classifier unite-ver83-classifier-10.05.2021-july2023.qza \
+  --i-reads repseq-ITS2-USFall.qza \
+  --o-classification classification-UNITE3-ITS2-USFall.qza 
+  
+qiime taxa barplot \
+  --i-table repseqtable-ITS2-USFall.qza \
+  --i-taxonomy classification-UNITE3-ITS2-USFall.qza \
+  --m-metadata-file USFall-ITS2-metadata.txt \
+  --o-visualization barplot-UNITE3-ITS2-USFall.qzv  
+ 
+qiime metadata tabulate \
+  --m-input-file classification-UNITE3-ITS2-USFall.qza \
+  --o-visualization classification-UNITE3-ITS2-USFall.qzv
+
+
+# < 1 - 73.11% unassigned reads per sample
+# 0 - 28.09% Viridiplantae per sample
+# 0 - 82.34% Rhizaria per sample
+# 0 - 21.72% Metazoa per sample
+# 0 - 83.64% Alveolata per sample
+# 0 - 5.85% Chromista per sample
+# 0 - 6.85% Amoebozoa per sample
+# 0 - 25.34% k__Eukaryota_kgd_Incertae_sedis per sample
+# 0 - 5.32% Stramenopila per sample
+# 2.80 - 99.91% Fungi per sample
