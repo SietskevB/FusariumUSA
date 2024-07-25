@@ -1,0 +1,52 @@
+# R 3.6.1
+
+library(phyloseq) # 1.30.0
+library(pairwiseAdonis) # 0.4
+
+setwd("yourdirectory") # CHANGE ME
+
+
+########################################################################################
+
+
+# Table S6
+# ITS2 data
+# Jaccard distances
+
+metadata <- import_qiime_sample_data("USFall-ITS2-metadata-noblank-decontam.txt")
+metadata$fieldcond <- paste(metadata$field, metadata$condition, sep = "_")
+
+# Data
+data.fall <- import_biom(BIOMfilename = "repseqtable-filtered-n4-53-UNITE3-USFall-ITS2-taxonomy.biom")
+data.fall <- merge_phyloseq(data.fall, metadata)
+colnames(tax_table(data.fall)) <- c("Kingdom", "Phylum", "Class", "Order", "Family", "Genus", "Species")
+# 254 unique ASVs
+
+# Filter samples with < 1061 reads
+data.fall.filt <- prune_samples(sample_sums(data.fall)>=1061, data.fall)
+
+# Data per field
+data.f2 <- subset_samples(data.fall.filt, field == 2)
+data.f3 <- subset_samples(data.fall.filt, field == 3)
+data.f4 <- subset_samples(data.fall.filt, field == 4)
+
+# Data per field filtered for ASVs with zero counts
+data.f2 <- prune_taxa(taxa_sums(data.f2) > 0, data.f2) # 187 ASVs
+data.f3 <- prune_taxa(taxa_sums(data.f3) > 0, data.f3) # 219 ASVs
+data.f4 <- prune_taxa(taxa_sums(data.f4) > 0, data.f4) # 169 ASVs
+
+
+########################################################################################
+
+
+# Pairwise ADONIS
+# Beware: results vary a little between tests on same data
+
+# Jaccard distances
+dist.jac <- phyloseq::distance(data.f2, "jaccard", binary = TRUE) # CHANGE ME for each field
+
+
+# Stat test: condition
+data.pairwise <- pairwise.adonis(dist.jac, factors = sample_data(data.f2)$condition, # CHANGE ME for each field
+                                 sim.method = "jaccard")
+data.pairwise
