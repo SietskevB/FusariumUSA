@@ -1,0 +1,56 @@
+# R 3.6.1
+
+library(phyloseq) # 1.30.0
+library(pairwiseAdonis) # 0.4
+
+setwd("yourdirectory") # CHANGE ME
+
+
+########################################################################################
+
+
+# Table S5
+# 16S data
+# Bray-Curtis distances
+
+metadata <- import_qiime_sample_data("USfields-16S-noblank-metadata.txt")
+
+data <- import_biom(BIOMfilename = "repseqtable-filt-n27-195-16S-USfields-taxonomy.biom")
+data <- merge_phyloseq(data, metadata)
+colnames(tax_table(data)) <- c("Kingdom", "Phylum", "Class", "Order", "Family", "Genus", "Species")
+# 6428 ASVs
+
+# Exclude field 1
+data.fsub <- subset_samples(data, Field != 1)
+
+# Filter per field
+data.f2 <- subset_samples(data.fsub, Field == "2")
+data.f3 <- subset_samples(data.fsub, Field == "3")
+data.f4 <- subset_samples(data.fsub, Field == "4")
+
+# Data per field filtered for ASVs with zero counts
+data.f2 <- prune_taxa(taxa_sums(data.f2) > 0, data.f2) # 6189 ASVs
+data.f3 <- prune_taxa(taxa_sums(data.f3) > 0, data.f3) # 6016 ASVs
+data.f4 <- prune_taxa(taxa_sums(data.f4) > 0, data.f4) # 6269 ASVs
+
+
+########################################################################################
+
+
+# Pairwise ADONIS
+# Beware: results vary a little between tests on same data
+
+feature.rel = transform_sample_counts(data.f2, function(x) {x/sum(x)}) # CHANGE ME for each field
+
+# Rearrange levels in Sample Type
+feature.rel@sam_data$Sample_Type <- factor(feature.rel@sam_data$Condition, levels = c("Healthy", "Infected", "Soil"))
+
+# Bray Curtis distances
+phy.bray <- distance(feature.rel, method = "bray")
+
+
+# Stat test: Sample_Type
+test <- pairwise.adonis(x = phy.bray, factors = sample_data(feature.rel)$Sample_Type,
+                        sim.method = "bray", perm = 999, p.adjust.m = "fdr")
+
+print(test)
