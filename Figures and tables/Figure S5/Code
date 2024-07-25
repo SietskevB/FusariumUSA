@@ -1,0 +1,106 @@
+# R 3.6.1
+
+library(phyloseq) # 1.30.0
+library(stringr) # 1.4.0
+library(ggplot2) # 3.4.2
+
+theme_set(theme_bw()) #sets background of plots to white with a grid
+theme_set(theme_classic()) #no grid
+
+setwd("yourdirectory") # CHANGE ME
+
+
+###################################################################################################################
+
+
+metadata <- import_qiime_sample_data("USFall-ITS2-metadata-noblank-decontam.txt")
+metadata$fieldcond <- paste(metadata$field, metadata$condition, sep = "_")
+
+# Data
+data.fall <- import_biom(BIOMfilename = "repseqtable-filtered-n4-53-UNITE3-USFall-ITS2-taxonomy.biom")
+data.fall <- merge_phyloseq(data.fall, metadata)
+colnames(tax_table(data.fall)) <- c("Kingdom", "Phylum", "Class", "Order", "Family", "Genus", "Species")
+# 254 unique ASVs
+
+# Filter samples with < 1061 reads
+data.fall.filt <- prune_samples(sample_sums(data.fall)>=1061, data.fall)
+
+# Filter field 1
+# Because not included in seq analysis
+data.fall.sub <- subset_samples(data.fall.filt, field != 1)
+
+# Data per field
+data.f2 <- subset_samples(data.fall.filt, field == 2)
+data.f3 <- subset_samples(data.fall.filt, field == 3)
+data.f4 <- subset_samples(data.fall.filt, field == 4)
+
+# Data per field filtered for ASVs with zero counts
+data.f2 <- prune_taxa(taxa_sums(data.f2) > 0, data.f2) # 187 ASVs
+data.f3 <- prune_taxa(taxa_sums(data.f3) > 0, data.f3) # 219 ASVs
+data.f4 <- prune_taxa(taxa_sums(data.f4) > 0, data.f4) # 169 ASVs
+
+
+###################################################################################################################
+
+
+# Barplots
+# Taxonomy of ASVs per field
+# Highlighting Fusarium (from Genus level identification onwards)
+
+# Taxonomy of Fusarium spp. across the three fields
+f.select <- c("s__Fusarium_chlamydosporum", "s__Fusarium_nematophilum", "s__Fusarium_solani")
+
+# Merge ASVs per field at species level
+data.sp <- tax_glom(data.f2, taxrank = "Species") # CHANGE ME for each field
+
+# Relative abundance (%) per sample
+feature.rel = transform_sample_counts(data.sp, function(x) {x/sum(x)})
+
+data.plot <- psmelt(feature.rel)
+data.plot$percent <- data.plot$Abundance * 100
+
+# New factor in data
+data.plot$Species <- as.character(data.plot$Species)
+data.plot$Species = str_replace_all(data.plot$Species, '"', "")
+
+data.plot$group <- factor(ifelse(data.plot$Species %in% f.select & data.plot$condition == "Soil", "Fusarium Soil", ifelse(data.plot$Species %in% f.select & data.plot$condition == "Healthy", "Fusarium Healthy", ifelse(data.plot$Species %in% f.select & data.plot$condition == "Infected", "Fusarium Infected", "Other"))),
+                          levels = c("Fusarium Healthy", "Fusarium Infected", "Fusarium Soil", "Other")) #
+
+# Arrange data by Fusarium abundance, descending
+data.combined <- data.plot[order(data.plot$group, -data.plot$percent),]
+
+
+# Factorize sample names to customize order
+names.soil <- as.character(unique(data.combined$names[which(data.combined$condition == "Soil")]))
+names.healthy <- as.character(unique(data.combined$names[which(data.combined$condition == "Healthy")]))
+names.infected <- as.character(unique(data.combined$names[which(data.combined$condition == "Infected")]))
+data.combined$names.fac <- factor(data.combined$names, levels = c(names.healthy, names.infected, names.soil))
+
+
+# Plot
+# Highlighting all unique ASVs with Fusarium genus annotation separately
+f.select <- ifelse(grep("Fusarium", data.combined$group), as.character(data.combined$Species), "Other")
+
+data.combined$uniquegroup <- factor(ifelse(data.combined$Species %in% f.select, as.character(data.combined$Species), "Other"))
+
+data.combined$uniquegroup.col <- factor(ifelse(data.combined$uniquegroup == "s__Fusarium_solani", "Fusarium_solani", 
+                                               ifelse(data.combined$uniquegroup == "s__Fusarium_chlamydosporum", "Fusarium_chlamydosporum", 
+                                                      ifelse(data.combined$uniquegroup == "s__Fusarium_nematophilum", "Fusarium_nematophilum", "Other"))))
+
+plot <- ggplot(data.combined, aes(x = names.fac, 
+                                  y = percent, 
+                                  fill = uniquegroup.col,
+                                  color = uniquegroup)) +
+  geom_bar(stat="identity", lwd = 0.01) + 
+  scale_fill_manual(name = "Fusarium", values = c("#edb9c4", "#cc768d", "#9c1f40", "#CCC4BE")) + # field 2
+  #scale_fill_manual(name = "Fusarium", values = c("#6fa5b3", "#007886", "#CCC4BE", "#a4dbd6")) + # field 3
+  #scale_fill_manual(name = "Fusarium", values = c("#afabd6", "#6361a1", "#1c1e65", "#CCC4BE")) + # field 4
+  scale_color_manual(values = c(rep("black", times = length(levels(data.combined$uniquegroup))))) +
+  theme(axis.text.x = element_text(angle = 90)) +
+  guides(color = "none")
+
+print(plot)
+
+ggsave("plot_USF2_Fusariumspp.svg", plot, width = 380, height = 280, units = "mm", dpi = 1200) # CHANGE ME for each field
+
+dev.off()
