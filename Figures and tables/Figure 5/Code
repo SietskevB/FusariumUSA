@@ -1,0 +1,261 @@
+# Fig. 5 consists of six panels
+# 5A-5C: Bray Curtis ordination plots for 16S data, one plot for each field
+# 5D-5F: Jaccard ordination plots for ITS2 data, one plot for each field
+
+# R 3.6.1
+
+library(phyloseq) # 1.30.0
+library(ggplot2) # 3.4.2
+
+theme_set(theme_bw())
+theme_set(theme_classic())
+
+
+###################################################################################################################
+
+
+# Fig. 5A-5C: ordination plots for 16S data, one plot for each field
+
+setwd("yourdirectory") # CHANGE ME
+
+metadata <- import_qiime_sample_data("USfields-16S-noblank-metadata.txt")
+
+# Data
+data <- import_biom(BIOMfilename = "repseqtable-filt-n27-195-16S-USfields-taxonomy.biom")
+data <- merge_phyloseq(data, metadata)
+colnames(tax_table(data)) <- c("Kingdom", "Phylum", "Class", "Order", "Family", "Genus", "Species")
+# 6428 ASVs
+
+# Exclude field 1
+data.fsub <- subset_samples(data, Field != 1)
+
+# Filter per field
+data.f2 <- subset_samples(data.fsub, Field == "2")
+data.f3 <- subset_samples(data.fsub, Field == "3")
+data.f4 <- subset_samples(data.fsub, Field == "4")
+
+# Data per field filtered for ASVs with zero counts
+data.f2 <- prune_taxa(taxa_sums(data.f2) > 0, data.f2) # 6189 ASVs
+data.f3 <- prune_taxa(taxa_sums(data.f3) > 0, data.f3) # 6016 ASVs
+data.f4 <- prune_taxa(taxa_sums(data.f4) > 0, data.f4) # 6269 ASVs
+
+# Excluding bulk
+data.f2.nb <- subset_samples(data.f2, Condition != "Soil")
+data.f3.nb <- subset_samples(data.f3, Condition != "Soil")
+data.f4.nb <- subset_samples(data.f4, Condition != "Soil")
+
+# Excluding ASVs not found in a field
+data.f2.nb <- filter_taxa(data.f2.nb, function(x) sum(x) > 0, TRUE) # 5947 ASVs
+data.f3.nb <- filter_taxa(data.f3.nb, function(x) sum(x) > 0, TRUE) # 5870 ASVs
+data.f4.nb <- filter_taxa(data.f4.nb, function(x) sum(x) > 0, TRUE) # 6177 ASVs
+
+# Rearrange levels in Sample Type
+data.f2.nb@sam_data$Sample_Type <- factor(data.f2.nb@sam_data$Condition, levels = c("Healthy", "Infected", "Soil"))
+data.f3.nb@sam_data$Sample_Type <- factor(data.f3.nb@sam_data$Condition, levels = c("Healthy", "Infected", "Soil"))
+data.f4.nb@sam_data$Sample_Type <- factor(data.f4.nb@sam_data$Condition, levels = c("Healthy", "Infected", "Soil"))
+
+
+# Ordination based on relative abundances
+# Bray Curtis
+feature.rel = transform_sample_counts(data.f2.nb, function(x) {x/sum(x)})
+
+# Calculate ordination variable
+ord.bray <- ordinate(feature.rel, "PCoA", "bray")
+
+# Plot 5A
+PCoA.bray = plot_ordination(feature.rel, ord.bray, type="samples") +
+  geom_point(aes(color=Condition, shape = Condition), size=10) + #separate fields 
+  scale_colour_manual(values = c("#f0adc2", "#ad365b", "#737373"), labels = c("Healthy", "Infected", "Soil")) + #f2 
+  xlab ("\nAxis.1 [22%]") + # USE ME for layout
+  ylab ("Axis.2 [14.7%] \n") + # USE ME for layout
+  scale_x_continuous(limits = c(-0.29, 0.55), breaks = seq(-0.4, 0.5, 0.2)) + # USE ME for layout
+  scale_y_continuous(limits = c(-0.4, 0.4), breaks = seq(-0.4, 0.4, 0.2)) + # USE ME for layout
+  theme(legend.position = "none") +
+  theme(text = element_text(size = 28)) +
+  theme(axis.text = element_text(size = 28))
+  
+print(PCoA.bray)
+
+ggsave("plot_USF2_16S_PCoA_BC_condition_nobulk_nolegend.svg.svg", PCoA.bray, width = 380, height = 280, units = "mm", dpi = 1200)
+
+dev.off()
+
+
+# Ordination based on relative abundances
+# Bray Curtis
+feature.rel = transform_sample_counts(data.f3.nb, function(x) {x/sum(x)})
+
+# Calculate ordination variable
+ord.bray <- ordinate(feature.rel, "PCoA", "bray")
+
+# Plot 5B
+PCoA.bray = plot_ordination(feature.rel, ord.bray, type="samples") +
+  geom_point(aes(color=Condition, shape = Condition), size=7) + 
+  scale_colour_manual(values = c("#d65678", "#6db4ad", "#6a65a3")) + 
+  xlab ("\nAxis.1 [22.4%]") + # USE ME for layout
+  ylab ("Axis.2 [12.5%] \n") + # USE ME for layout
+  scale_x_continuous(limits = c(-0.33, 0.4), breaks = seq(-0.4, 0.4, 0.2)) + # USE ME for layout
+  scale_y_continuous(limits = c(-0.24, 0.42), breaks = seq(-0.4, 0.4, 0.2)) + # USE ME for layout
+  theme(legend.position = "none") +
+  theme(text = element_text(size = 28)) +
+  theme(axis.text = element_text(size = 28))
+  
+print(PCoA.bray)
+
+ggsave("plot_USF3_16S_PCoA_BC_condition_nobulk_nolegend.svg.svg", PCoA.bray, width = 380, height = 280, units = "mm", dpi = 1200)
+
+dev.off()
+
+
+# Ordination based on relative abundances
+# Bray Curtis
+feature.rel = transform_sample_counts(data.f4.nb, function(x) {x/sum(x)})
+
+# Calculate ordination variable
+ord.bray <- ordinate(feature.rel, "PCoA", "bray")
+
+# Plot 5C
+PCoA.bray = plot_ordination(feature.rel, ord.bray, type="samples") +
+  geom_point(aes(color=Condition, shape = Condition), size=7) + 
+  scale_colour_manual(values = c("#d65678", "#6db4ad", "#6a65a3")) + 
+  xlab ("\nAxis.1 [32.2%]") + # USE ME for layout
+  ylab ("Axis.2 [15%] \n") + # USE ME for layout
+  scale_x_continuous(limits = c(-0.33, 0.42), breaks = seq(-0.4, 0.5, 0.2)) + # USE ME for layout
+  scale_y_continuous(limits = c(-0.4, 0.4), breaks = seq(-0.4, 0.4, 0.2)) + # USE ME for layout
+  theme(legend.position = "none") +
+  theme(text = element_text(size = 28)) +
+  theme(axis.text = element_text(size = 28))
+  
+print(PCoA.bray)
+
+ggsave("plot_USF4_16S_PCoA_BC_condition_nobulk_nolegend.svg.svg", PCoA.bray, width = 380, height = 280, units = "mm", dpi = 1200)
+
+dev.off()
+
+
+###################################################################################################################
+
+
+# Fig. 5D-5F: ordination plots for ITS2 data, one plot for each field
+
+setwd("yourdirectory") # CHANGE ME
+
+metadata <- import_qiime_sample_data("USFall-ITS2-metadata-noblank-decontam.txt")
+metadata$fieldcond <- paste(metadata$field, metadata$condition, sep = "_")
+
+# Data
+data.fall <- import_biom(BIOMfilename = "repseqtable-filtered-n4-53-UNITE3-USFall-ITS2-taxonomy.biom")
+data.fall <- merge_phyloseq(data.fall, metadata)
+colnames(tax_table(data.fall)) <- c("Kingdom", "Phylum", "Class", "Order", "Family", "Genus", "Species")
+# 254 unique ASVs
+
+# Filter samples with < 1061 reads
+data.fall.filt <- prune_samples(sample_sums(data.fall)>=1061, data.fall)
+
+# Filter field 1
+data.fall.sub <- subset_samples(data.fall.filt, field != 1)
+
+# Data per field
+data.f2 <- subset_samples(data.fall.filt, field == 2)
+data.f3 <- subset_samples(data.fall.filt, field == 3)
+data.f4 <- subset_samples(data.fall.filt, field == 4)
+
+# Data per field filtered for ASVs with zero counts
+data.f2 <- prune_taxa(taxa_sums(data.f2) > 0, data.f2) # 187 ASVs
+data.f3 <- prune_taxa(taxa_sums(data.f3) > 0, data.f3) # 219 ASVs
+data.f4 <- prune_taxa(taxa_sums(data.f4) > 0, data.f4) # 169 ASVs
+
+# Data per field without bulk soil
+data.f2.nb <- subset_samples(data.f2, condition != "Soil")
+data.f3.nb <- subset_samples(data.f3, condition != "Soil")
+data.f4.nb <- subset_samples(data.f4, condition != "Soil")
+
+# Make sure there's no ASVs left with 0 counts
+data.f2.nb <- prune_taxa(taxa_sums(data.f2.nb) > 0, data.f2.nb) # 175 ASVs
+data.f3.nb <- prune_taxa(taxa_sums(data.f3.nb) > 0, data.f3.nb) # 212 ASVs
+data.f4.nb <- prune_taxa(taxa_sums(data.f4.nb) > 0, data.f4.nb) # 161 ASVs
+
+# And no samples with 0 ASV counts
+data.f2.nb <- prune_samples(sample_sums(data.f2.nb) >= 1, data.f2.nb)
+data.f3.nb <- prune_samples(sample_sums(data.f3.nb) >= 1, data.f3.nb)
+data.f4.nb <- prune_samples(sample_sums(data.f4.nb) >= 1, data.f4.nb)
+
+
+# Ordination irrespective of abundances ASVs
+# Jaccard (not available in phyloseq::ordination)
+# Don't use vegan -> Jaccard still based on abundances
+# Use phyloseq with binary == TRUE, based on vegdist package
+
+# Rearrange levels in Sample Type
+data.f2.nb@sam_data$Sample_Type <- factor(data.f2.nb@sam_data$condition, levels = c("Healthy", "Infected"))
+data.f3.nb@sam_data$Sample_Type <- factor(data.f3.nb@sam_data$condition, levels = c("Healthy", "Infected"))
+data.f4.nb@sam_data$Sample_Type <- factor(data.f4.nb@sam_data$condition, levels = c("Healthy", "Infected"))
+
+
+# Calculate ordination variable
+dist.jac2 <- phyloseq::distance(data.f2.nb, "jaccard", binary = TRUE)
+ord.jac2 <- ordinate(data.f2.nb, method = "PCoA", distance = dist.jac2)
+
+# Plot 5D
+PCoA.jac = plot_ordination(data.f2.nb, ord.jac2, type="samples") +
+  geom_point(aes(color=condition, shape = condition), size=10) + #separate fields
+  scale_colour_manual(values = c("#f0adc2", "#ad365b", "#737373"), labels = c("Healthy", "Infected", "Soil")) + #f2
+  xlab ("\nAxis.1 [6.8%]") + # USE ME for layout
+  ylab ("Axis.2 [5.7%] \n") + # USE ME for layout
+  scale_x_continuous(limits = c(-0.4, 0.28), breaks = seq(-0.4, 0.2, 0.2)) + # USE ME for layout
+  scale_y_continuous(limits = c(-0.25, 0.4), breaks = seq(-0.4, 0.4, 0.2)) + # USE ME for layout
+  theme(legend.position = "none") +
+  theme(text = element_text(size = 28)) +
+  theme(axis.text = element_text(size = 28)) 
+
+print(PCoA.jac)
+
+ggsave("plot_USF2_ITS2_PCoA_Jaccard_nobulk_nolegend.svg", PCoA.jac, width = 380, height = 280, units = "mm", dpi = 1200)
+
+dev.off()
+
+
+# Calculate ordination variable
+dist.jac3 <- phyloseq::distance(data.f3.nb, "jaccard", binary = TRUE)
+ord.jac3 <- ordinate(data.f3.nb, method = "PCoA", distance = dist.jac3)
+
+# Plot 5E
+PCoA.jac = plot_ordination(data.f3.nb, ord.jac3, type="samples") +
+  geom_point(aes(color=condition, shape = condition), size=10) + #separate fields
+  scale_colour_manual(values = c("#A4DBD6", "#32847A", "#737373"), labels = c("Healthy", "Infected", "Soil")) + #f3
+  xlab ("\nAxis.1 [6.4%]") + # USE ME for layout
+  ylab ("Axis.2 [5.5%] \n") + # USE ME for layout
+  scale_x_continuous(limits = c(-0.34, 0.31), breaks = seq(-0.2, 0.2, 0.2)) + # USE ME for layout
+  scale_y_continuous(limits = c(-0.27, 0.4), breaks = seq(-0.4, 0.4, 0.2)) + # USE ME for layout
+  theme(legend.position = "none") +
+  theme(text = element_text(size = 28)) +
+  theme(axis.text = element_text(size = 28)) 
+
+print(PCoA.jac)
+
+ggsave("plot_USF3_ITS2_PCoA_Jaccard_nobulk_nolegend.svg", PCoA.jac, width = 380, height = 280, units = "mm", dpi = 1200)
+
+dev.off()
+
+
+# Calculate ordination variable
+dist.jac4 <- phyloseq::distance(data.f4.nb, "jaccard", binary = TRUE)
+ord.jac4 <- ordinate(data.f4.nb, method = "PCoA", distance = dist.jac4)
+
+# Plot 5F
+PCoA.jac = plot_ordination(data.f4.nb, ord.jac4, type="samples") +
+  geom_point(aes(color=condition, shape = condition), size=10) + #separate fields
+  scale_colour_manual(values = c("#AAACE0", "#3E4082", "#737373"), labels = c("Healthy", "Infected", "Soil")) + #f4
+  xlab ("\nAxis.1 [7.7%]") + # USE ME for layout
+  ylab ("Axis.2 [7.1%] \n") + # USE ME for layout
+  scale_x_continuous(limits = c(-0.32, 0.34), breaks = seq(-0.2, 0.2, 0.2)) + # USE ME for layout
+  scale_y_continuous(limits = c(-0.31, 0.45), breaks = seq(-0.4, 0.4, 0.2)) + # USE ME for layout
+  theme(legend.position = "none") +
+  theme(text = element_text(size = 28)) +
+  theme(axis.text = element_text(size = 28)) 
+
+print(PCoA.jac)
+
+ggsave("plot_USF4_ITS2_PCoA_Jaccard_nobulk_nolegend.svg", PCoA.jac, width = 380, height = 280, units = "mm", dpi = 1200)
+
+dev.off()
