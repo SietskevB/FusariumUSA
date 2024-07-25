@@ -1,0 +1,794 @@
+# R 3.6.1
+
+library(phyloseq) # 1.30.0
+library(microbiome) # 1.8.0; ANCOM-BC
+library(nloptr) # 1.2.2.2; ANCOM-BC
+library(dplyr) # 1.0.8; ANCOM-BC
+library("DESeq2") # 1.26.0; DESeq2
+library(data.table) # 1.14.2 ; Simper
+library(textshape) # 1.7.3; Simper
+library(vegan) # 2.5.7; Simper
+library(stats) # 3.6.1 ; Spearman rank correlations
+library(jmuOutlier) # 2.2; Spearman rank correlations
+
+
+###################################################################################################################
+
+
+# ITS2
+
+setwd("yourdirectory") # CHANGE ME
+
+metadata <- import_qiime_sample_data("USFall-ITS2-metadata-noblank-decontam.txt")
+metadata$fieldcond <- paste(metadata$field, metadata$condition, sep = "_")
+
+# Data
+data.fall <- import_biom(BIOMfilename = "repseqtable-filtered-n4-53-UNITE3-USFall-ITS2-taxonomy.biom")
+data.fall <- merge_phyloseq(data.fall, metadata)
+colnames(tax_table(data.fall)) <- c("Kingdom", "Phylum", "Class", "Order", "Family", "Genus", "Species")
+# 254 unique ASVs
+
+# Filter samples with < 1061 reads
+# As determined based on explorative PCoAs in Qiime2
+data.fall.filt <- prune_samples(sample_sums(data.fall)>=1061, data.fall)
+
+# Filter field 1
+data.fall.sub <- subset_samples(data.fall.filt, field != 1)
+
+# Data per field
+data.f2 <- subset_samples(data.fall.filt, field == 2)
+data.f3 <- subset_samples(data.fall.filt, field == 3)
+data.f4 <- subset_samples(data.fall.filt, field == 4)
+
+# Data per field without bulk soil
+data.f2.nb <- subset_samples(data.f2, condition != "Soil")
+data.f3.nb <- subset_samples(data.f3, condition != "Soil")
+data.f4.nb <- subset_samples(data.f4, condition != "Soil")
+
+# Make sure there's no ASVs left with 0 counts
+data.f2.nb <- prune_taxa(taxa_sums(data.f2.nb) > 0, data.f2.nb) # 175 ASVs
+data.f3.nb <- prune_taxa(taxa_sums(data.f3.nb) > 0, data.f3.nb) # 212 ASVs
+data.f4.nb <- prune_taxa(taxa_sums(data.f4.nb) > 0, data.f4.nb) # 161 ASVs
+
+# And no samples with 0 ASV counts
+data.f2.nb <- prune_samples(sample_sums(data.f2.nb) >= 1, data.f2.nb)
+data.f3.nb <- prune_samples(sample_sums(data.f3.nb) >= 1, data.f3.nb)
+data.f4.nb <- prune_samples(sample_sums(data.f4.nb) >= 1, data.f4.nb)
+
+
+###################################################################################################################
+
+
+# ANCOM-bc
+# Lin & Peddada. Nat. Comm, 2020
+# https://github.com/FrederickHuangLin/ANCOM-BC-Code-Archive/blob/master/scripts/ancom_bc.R
+# Required functions at bottom of code
+
+feature.ancom = abundances(data.f4.nb) # CHANGE ME
+meta.data <- metadata
+sample.var = "sampleid"
+group.var = "condition"
+zero.cut = 0.90
+# Numerical fraction between 0 and 1. Taxa with proportion of zeroes greater than zero.cut are not included in the analysis
+# Keep this max 1.0 to remove ASVs marked as outliers -> only NA and 0 counts remaining, resulting in proportion = 1.0
+lib.cut = 0
+# Samples with library size less than lib.cut are not included in the analysis; I don't filter any more in this step (n is already 2+)
+neg.lb = TRUE 
+# TRUE indicates a taxon would be classified as a structural zero in the corresponding experimental group using its asymptotic lower bound
+
+
+# Filtering out outliers
+# Marking structural zeros
+# Load function at bottom of code
+pre.process = feature_table_pre_process(feature.ancom, meta.data, sample.var, 
+                                        group.var, zero.cut, lib.cut, neg.lb)
+
+# Filter feature table etc. for pre-processed ASVs
+feature.ancom = pre.process$feature.table
+group.name = pre.process$group.name
+group.ind = pre.process$group.ind
+struc.zero = pre.process$structure.zeros
+
+# Export info on structural zeros
+struc.zero.df <- data.frame(ID = row.names(struc.zero), struc.zero)
+write.csv(struc.zero.df, file = "USField4-ITS2-ANCOM-struczero.csv") # CHANGE ME
+
+
+# Parameters for ANCOM-BC
+grp.name = group.name
+grp.ind = group.ind
+adj.method = "fdr" #default is Bonferroni
+
+tol.EM = 1e-5; max.iterNum = 100; perNum = 1000; alpha = 0.05
+
+
+# ANCOM_bc
+# Load function at bottom of code
+
+out = ANCOM_BC(feature.ancom, grp.name, grp.ind, struc.zero,
+               adj.method, tol.EM, max.iterNum, perNum, alpha)
+
+res = cbind(taxon = rownames(out$feature.table), out$res)
+
+res <- arrange(res, diff.abn, by.group= TRUE)
+
+
+# Remove scientific writing
+res <- format(res, scientific = FALSE)
+res <- as.data.frame(res)
+
+write.csv(res, "USField4-ITS2-ANCOM.csv") # CHANGE ME
+
+# Field 2:
+# 0 DA
+# And 10 structural zeroes
+
+# Field 3:
+# 0 DA
+# And 13 structural zeroes
+
+# Field 4:
+# 0 DA
+# And 11 structural zeroes
+
+
+###################################################################################################################
+
+
+# DESeq2
+# Love, M.I. et al. Genome Biology, 2014
+
+# DESeq2 object
+# feature.deseq = phyloseq_to_deseq2(data.f4.nb, ~condition)
+
+# Perform estimateSizeFactors
+# feature.deseq = estimateSizeFactors(feature.deseq) # throws error for field 2, 3 and 4; data too sparse
+
+# Alternative: add pseudocount (1)
+data.pseudo <- otu_table(data.f4.nb) + 1 # CHANGE ME
+data.pseudo <- merge_phyloseq(data.pseudo, metadata)
+
+feature.deseq = phyloseq_to_deseq2(data.pseudo, ~condition) 
+feature.deseq = estimateSizeFactors(feature.deseq)
+
+feature.deseq = DESeq(feature.deseq, fitType="local")
+
+# Check model fitting of dispersion
+plot.disp <- plotDispEsts(feature.deseq)
+
+# Shrink log fold changes
+resultsNames(feature.deseq) # Copy paste the result in next variable command
+lfc.deseq <- lfcShrink(feature.deseq, coef="condition_Infected_vs_Healthy") # CHANGE ME
+
+# Differential abundance test
+alpha = 0.05
+
+sigtab = lfc.deseq[which(lfc.deseq$padj < alpha), ] 
+sigtab= cbind(as(sigtab, "data.frame")) #, as(tax_table(data.f4.pseudo)[rownames(sigtab), ], "matrix")) # CHANGE ME
+
+head(sigtab) 
+dim(sigtab)
+
+# Field 2: 27 differentially abundant ASVs
+# Field 3: 32 diff abun ASVs (with pseudocount)
+# Field 4: 18 diff abun ASVs
+
+
+# Export data
+data.exp <- lfc.deseq@listData
+row <- lfc.deseq@rownames
+data.exp <- as.data.frame(data.exp)
+row.names(data.exp) <- row
+
+write.csv(data.exp, "USField4-ITS2-DESeq2.csv") # CHANGE ME
+
+
+###################################################################################################################
+
+
+# Fisher's exact test
+# Make columns with prevalence for each ASV
+# One column Healthy, second column Diseased
+
+# Turn ASV phyloseq object into a dataframe
+feature.df <- psmelt(data.f4.nb) # CHANGE ME
+
+# Isolate healthy samples, calculate prevalence of each ASV
+newdf <- filter(feature.df, condition == "Healthy")
+newdf$cnth <- ifelse(newdf$Abundance > 0, 1, 0)
+
+# Summarize info per feature, join info as column to original dataframe
+cnth <- group_by(newdf, OTU) %>% summarize(sum(cnth))
+
+# Same for diseased samples
+newdf <- filter(feature.df, condition == "Infected")
+newdf$cntd <- ifelse(newdf$Abundance > 0, 1, 0)
+cntd <- group_by(newdf, OTU) %>% summarize(sum(cntd))
+
+# Merge cnth and cntd into new dataframe
+newdf <- merge(cnth, cntd, by="OTU")
+newdf <- as.data.frame(newdf)
+
+# Rename colnames
+names(newdf)[2] <- "cnth"
+names(newdf)[3] <- "cntd"
+
+# Make ID into rownames
+rownames(newdf) <- newdf$OTU
+
+# Remove column with ID
+newdf <- newdf[-c(1)]
+
+newdf$unobh <- length(unique(feature.df$Sample[which(feature.df$condition == "Healthy")])) - newdf$cnth 
+newdf$unobd <- length(unique(feature.df$Sample[which(feature.df$condition == "Infected")])) - newdf$cntd 
+
+col.order <- c("cnth", "unobh", "cntd", "unobd")
+newdf <- newdf[, col.order]
+
+# Fisher test
+newdf$fisher_p_both <- apply(newdf, 1,
+                             function(x) {
+                               tbl <- matrix(as.numeric(x[1:4]), ncol=2, byrow=T)
+                               fisher.test(tbl, alternative = "two.sided")$p.value
+                             })
+
+newdf$padj <- p.adjust(newdf$fisher_p_both, method = "fdr", n = length(newdf$fisher_p_both))
+
+
+# Export data
+write.csv(newdf, "USField4-ITS2-Fisher.csv") # CHANGE ME
+
+# Field 2:
+# 0 ASVs DA
+
+# Field 3:
+# 0 ASVs DA
+
+# Field 4:
+# 0 ASVs DA
+
+
+###################################################################################################################
+
+
+# Simper analysis
+# Clarke, K.R. Australian Journal of Ecology, 1993
+# Be aware that the output differs with every run i.e. minor changes in no. of detected ASVs
+# Therefore, set seed
+
+# Filter bulk samples from metadata
+# Otherwise one too many levels in Sample_Type
+metadata.nb <- metadata[which(metadata$condition != "Soil")]
+meta.nb.f4 <- metadata.nb[match(sample_data(data.f4.nb)$sampleid, metadata.nb$sampleid)] # CHANGE ME
+
+# Community table needs features in columns, rows as samples
+
+# Relative counts
+feature.rel <- transform_sample_counts(data.f4.nb, function(x) {x/sum(x)}) # CHANGE ME
+
+# Extract OTU table from phyloseq object
+ASV.extr = as(otu_table(feature.rel), "matrix")
+
+# Transpose to have sample IDs as rows
+if(taxa_are_rows(data.f4.nb)){ASV.extr <- t(ASV.extr)} # CHANGE ME
+
+# Coerce to data.frame
+data.df = as.data.frame(ASV.extr)
+
+# Sample names as column
+data.df <- setDT(data.df, keep.rownames = TRUE)[]
+names(data.df)[1] <- "sample"
+
+# Rearrange rows, use sample names as rownames
+data.df <- arrange(data.df, sample)
+data.df <- column_to_rownames(data.df, loc = 1)
+
+
+# Set seed
+set.seed(8765)
+
+# Simper
+sim <- with(meta.nb.f4, simper(comm = data.df, group = condition, permutations = 999)) # CHANGE ME
+sim.sum <- summary(sim, ordered = TRUE)
+
+# Extract dataframe
+simdf <- sim.sum[["Healthy_Infected"]]
+
+# Adjust p-values
+simdf$padj = p.adjust(simdf$p, method = "fdr")
+
+# Export results
+write.csv(simdf, file = "USField4-ITS2-Simper.csv") # CHANGE ME
+
+# Field 2:
+# 0 ASVs contributing to separation healthy and diseased samples
+
+# Field 3:
+# 0 ASVs contributing to separation healthy and diseased samples
+
+# Field 4:
+# 0 ASVs contributing to separation healthy and diseased samples
+
+
+###################################################################################################################
+
+
+# Spearman rank correlations
+ASV.extr = otu_table(data.f4.nb) # CHANGE ME
+
+# Add pseudocount to original counts
+ASV.extr <- ASV.extr + 1
+
+# Replace otu table in phyloseq object
+feature.pseudo <- data.f4.nb # CHANGE ME
+otu_table(feature.pseudo) <- ASV.extr
+
+# Relative counts
+feature.rel <- transform_sample_counts(feature.pseudo, function(x) {x/sum(x)})
+ASV.extr = otu_table(feature.rel) 
+if(taxa_are_rows(feature.rel)){ASV.extr <- t(ASV.extr)}
+
+# Log transform
+data.log <- log(ASV.extr)
+
+# Coerce to data.frame
+data.df = as.data.frame(data.log)
+
+# Add Treatment_nr column
+data.df$Treatment_nr <- data.f4.nb@sam_data$condition[which(rownames(data.df) == data.f4.nb@sam_data$sampleid)] # CHANGE ME
+data.df$Treatment_nr <- as.character(data.df$Treatment_nr)
+data.df$Treatment_nr <- replace(data.df$Treatment_nr, data.df$Treatment_nr == "Infected", 1)
+data.df$Treatment_nr <- replace(data.df$Treatment_nr, data.df$Treatment_nr == "Healthy", 0)
+data.df$Treatment_nr <- as.numeric(data.df$Treatment_nr)
+
+i1 <- sapply(data.df, is.numeric)
+y1 <- "Treatment_nr"
+x1 <- setdiff(names(data.df)[i1], y1)
+
+# Spearman correlation calculations
+p <- list()
+group2 <- data.df$Treatment_nr
+
+for (i in x1) {
+  group1 <- data.df[[i]]
+  p[i] <- perm.cor.test(group1, group2, method = "spearman", num.sim = 1000)$p.value
+  p_value <- unlist(p, use.names=TRUE)
+}
+
+p.df <- t(as.data.frame(p))
+p.df <- as.data.frame(p.df)
+colnames(p.df) <- c("pval")
+
+
+# Add pseudocount (0.0001) to all p-values
+p.df$pseudo <- p.df$pval + 0.0001
+
+# P-value adjustment for multiple calculations
+p.df.adj = p.adjust(p.df$pseudo, method = "fdr")
+
+# Bind results to p_df1
+p.df$padj <- cbind(p.df.adj)
+
+# Export results
+write.csv(p.df, file = "USField4-ITS2-Spearman-padj.csv") # CHANGE ME
+
+
+# Calculate the R2
+r <- list()
+
+for (i in x1) {
+  # using as.names not needed and possibly harmful
+  group1 <- data.df[[i]]
+  group2 <- data.df$Treatment_nr
+  r[i] <- cor.test(group1, group2, method = "spearman")$estimate
+  r_value <- unlist(r, use.names=TRUE)
+}
+
+r.df <- t(as.data.frame(r))
+
+write.csv(r.df, file = "USField4-ITS2-Spearman-R2.csv") # CHANGE ME
+
+# Field 2:
+# 0 ASVs correlated with infection (padj < 0.05)
+
+# Field 3:
+# 0 ASVs correlated with infection (padj < 0.05)
+
+# Field 4:
+# 0 ASVs correlated with infection (padj < 0.05)
+
+
+###################################################################################################################
+
+
+# Functions for ANCOM-bc
+
+# Data Pre-Processing
+feature_table_pre_process = function(feature.table, meta.data, sample.var, group.var, 
+                                     zero.cut = 0.90, lib.cut = 1000, neg.lb){
+  feature.table = data.frame(feature.table, check.names = FALSE)
+  meta.data = data.frame(meta.data, check.names = FALSE)
+  # Drop unused levels
+  meta.data[] = lapply(meta.data, function(x) if(is.factor(x)) factor(x) else x)
+  
+  sample.ID = colnames(feature.table)
+  meta.data = meta.data[match(sample.ID, meta.data[, sample.var]), ]
+  
+  # 1. Identify outliers within each taxon
+  group = factor(meta.data[, group.var])
+  group.name = levels(group)
+  grp.ind.origin = lapply(1:nlevels(group), function(i) which(group == group.name[i]))
+  n.grp.origin = length(grp.ind.origin)
+  n.samp.grp.origin = sapply(grp.ind.origin, length)
+  feature.table = feature.table[, unlist(grp.ind.origin)]
+  
+  z = log(feature.table + 1)
+  f = z; f[f == 0] = NA; f = colMeans(f, na.rm = T)
+  f.mean = unlist(tapply(f, rep(1:n.grp.origin, n.samp.grp.origin), mean))
+  e = f-rep(f.mean, n.samp.grp.origin)
+  y = t(t(z) - e)
+  
+  outlier_check = function(x){
+    mu1 = quantile(x, 0.25); mu2 = quantile(x, 0.75)
+    sigma1 = quantile(x, 0.75)-quantile(x, 0.25); sigma2 = sigma1
+    pi = 0.75
+    n = length(x)
+    epsilon = 100
+    tol = 1e-5
+    score = pi*dnorm(x, mean = mu1, sd = sigma1)/((1-pi)*dnorm(x, mean = mu2, sd = sigma2))
+    while (epsilon > tol) {
+      grp1.ind = score >= 1
+      mu1.new = mean(x[grp1.ind]); mu2.new = mean(x[!grp1.ind])
+      sigma1.new = sd(x[grp1.ind]); if(is.na(sigma1.new)) sigma1.new = 0
+      sigma2.new = sd(x[!grp1.ind]); if(is.na(sigma2.new)) sigma2.new = 0
+      pi.new = sum(grp1.ind)/n
+      
+      para = c(mu1.new, mu2.new, sigma1.new, sigma2.new, pi.new)
+      if(any(is.na(para))) break
+      
+      score = pi.new*dnorm(x, mean = mu1.new, sd = sigma1.new)/
+        ((1-pi.new)*dnorm(x, mean = mu2.new, sd = sigma2.new))
+      
+      epsilon = sqrt((mu1-mu1.new)^2 + (mu2-mu2.new)^2 + 
+                       (sigma1-sigma1.new)^2 + (sigma2-sigma2.new)^2 + (pi-pi.new)^2)
+      mu1 = mu1.new; mu2 = mu2.new; sigma1 = sigma1.new; sigma2 = sigma2.new; pi = pi.new
+    }
+    
+    if(mu1 + 1.96*sigma1 < mu2 - 1.96*sigma2){
+      if(pi > 0.85){
+        out.ind = (!grp1.ind)
+      }else if(pi < 0.15){
+        out.ind = grp1.ind
+      }else{
+        out.ind = rep(FALSE, n)
+      }
+    }else{
+      out.ind = rep(FALSE, n)
+    }
+    return(out.ind)
+  }
+  feature.table.out = t(apply(y, 1, function(i)
+    unlist(tapply(i, rep(1:n.grp.origin, n.samp.grp.origin), function(j) outlier_check(j)))))
+  feature.table[feature.table.out] = NA
+  
+  # 2. Discard taxa with zeros  >=  zero.cut
+  taxa.zero.prop = apply(feature.table, 1, function(x) sum(x == 0, na.rm = T)/length(x[!is.na(x)]))
+  filter.taxa = which(taxa.zero.prop >= zero.cut)
+  if(length(filter.taxa)>0){
+    feature.table = feature.table[-filter.taxa, ]
+  }
+  
+  # 3. Discard samples with library size < lib.cut
+  library.size = colSums(feature.table, na.rm = T)
+  sample.ID = colnames(feature.table)
+  meta.data = meta.data[match(sample.ID, meta.data[, sample.var]), ]
+  
+  if(any(library.size<lib.cut)){
+    filter.subject = which(library.size<lib.cut)
+    feature.table = feature.table[, -filter.subject]
+    meta.data = meta.data[-filter.subject, ]
+  }
+  
+  # 4. Re-order the OTU table
+  group = factor(meta.data[, group.var])
+  group.name = levels(group)
+  grp.ind = lapply(1:nlevels(group), function(i) which(group == group.name[i]))
+  n.grp = length(grp.ind)
+  n.samp.grp = sapply(grp.ind, length)
+  
+  n.taxa = nrow(feature.table)
+  taxa.id = rownames(feature.table)
+  n.samp = ncol(feature.table)
+  
+  # 5. Identify taxa with structure zeros
+  present.table = as.matrix(feature.table)
+  present.table[is.na(present.table)] = 0
+  present.table[present.table != 0] = 1
+  
+  p.hat.mat = t(apply(present.table, 1, function(x)
+    unlist(tapply(x, rep(1:n.grp, n.samp.grp), function(y) mean(y, na.rm = T)))))
+  sample.size = t(apply(feature.table, 1, function(x)
+    unlist(tapply(x, rep(1:n.grp, n.samp.grp), function(y) length(y[!is.na(y)])))))
+  p.hat.lo.mat = p.hat.mat - 1.96 * sqrt(p.hat.mat*(1 - p.hat.mat)/sample.size)
+  colnames(p.hat.mat) = levels(group)
+  colnames(p.hat.lo.mat) = levels(group)
+  
+  struc.zero = matrix(0, nrow = n.taxa, ncol = n.grp)
+  struc.zero[p.hat.mat == 0] = 1
+  # Whether we need to classify a taxon into structural zero by its negative lower bound?
+  if(neg.lb) struc.zero[p.hat.lo.mat <= 0] = 1
+  rownames(struc.zero) = taxa.id
+  colnames(struc.zero) = paste0("structural.zero (", levels(group), ")")
+  
+  # Entries considered to be structural zeros are set to be 0s
+  ind.zero = struc.zero[, rep(1:n.grp, times = n.samp.grp)]
+  feature.table = feature.table * (1 - ind.zero)
+  
+  # 6. Return results
+  res = list(feature.table = feature.table, library.size = library.size, 
+             group.name = group.name, group.ind = grp.ind, structure.zeros = struc.zero)
+  return(res)
+}
+
+# ANCOM-BC main function
+ANCOM_BC = function(feature.table, grp.name, grp.ind, struc.zero, adj.method = "bonferroni", 
+                    tol.EM = 1e-5, max.iterNum = 100, perNum = 1000, alpha = 0.05){
+  n.taxa.raw = nrow(feature.table)
+  taxa.id.raw = rownames(feature.table)
+  n.samp = ncol(feature.table)
+  sample.id = colnames(feature.table)
+  
+  n.grp = length(grp.ind)
+  n.samp.grp = sapply(grp.ind, length)
+  
+  ### 0. Discard taxa with structural zeros for the moment
+  comp.taxa.pos = which(apply(struc.zero, 1, function(x) all(x == 0))) # position of complete taxa (no structural zeros)
+  O = feature.table[comp.taxa.pos, ]
+  n.taxa = nrow(O)
+  taxa.id = rownames(O)
+  n.samp = ncol(O)
+  y = as.matrix(log(O + 1))
+  
+  ### 1. Initial estimates of sampling fractions and mean absolute abundances
+  mu = t(apply(y, 1, function(i) tapply(i, rep(1:n.grp, n.samp.grp), function(j)
+    mean(j, na.rm = T))))
+  d = colMeans(y - mu[, rep(1:n.grp, times = n.samp.grp)], na.rm = T)
+  
+  ## Iteration in case of missing values of y
+  iterNum = 0
+  epsilon = 100
+  while (epsilon > tol.EM & iterNum < max.iterNum) {
+    # Updating mu
+    mu.new = t(apply(t(t(y) - d), 1, function(i) tapply(i, rep(1:n.grp, n.samp.grp), function(j)
+      mean(j, na.rm = T))))
+    
+    # Updating d
+    d.new = colMeans(y - mu.new[, rep(1:ncol(mu.new), times = n.samp.grp)], na.rm = T)
+    
+    # Iteration
+    epsilon = sqrt(sum((mu.new - mu)^2) + sum((d.new - d)^2))
+    iterNum = iterNum + 1
+    
+    mu = mu.new
+    d = d.new
+  }
+  
+  mu.var.each = (y-t(t(mu[, rep(1:ncol(mu), times = n.samp.grp)])+d))^2
+  mu.var = t(apply(mu.var.each, 1, function(x) tapply(x, rep(1:n.grp, n.samp.grp), function(y)
+    mean(y, na.rm = T))))
+  sample.size = t(apply(y, 1, function(x)
+    unlist(tapply(x, rep(1:n.grp, n.samp.grp), function(y) length(y[!is.na(y)])))))
+  mu.var = mu.var/sample.size
+  
+  ### 2. Estimate the bias (between-group difference of sampling fractions) by E-M algorithm
+  bias.em.vec = rep(NA, n.grp - 1)
+  bias.wls.vec = rep(NA, n.grp - 1)
+  bias.var.vec = rep(NA, n.grp - 1)
+  for (i in 1:(n.grp-1)) {
+    Delta = mu[, 1] - mu[, 1+i]
+    nu = rowSums(mu.var[, c(1, 1+i)])
+    
+    ## 2.1 Initials
+    pi0_0 = 0.75
+    pi1_0 = 0.125
+    pi2_0 = 0.125
+    delta_0 = mean(Delta[Delta >= quantile(Delta, 0.25, na.rm = T)&
+                           Delta <= quantile(Delta, 0.75, na.rm = T)], na.rm = T)
+    l1_0 = mean(Delta[Delta < quantile(Delta, 0.125, na.rm = T)], na.rm = T)
+    l2_0 = mean(Delta[Delta > quantile(Delta, 0.875, na.rm = T)], na.rm = T)
+    kappa1_0 = var(Delta[Delta < quantile(Delta, 0.125, na.rm = T)], na.rm = T)
+    if(is.na(kappa1_0)|kappa1_0 == 0) kappa1_0 = 1
+    kappa2_0 = var(Delta[Delta > quantile(Delta, 0.875, na.rm = T)], na.rm = T)
+    if(is.na(kappa2_0)|kappa2_0 == 0) kappa2_0 = 1
+    
+    ## 2.2 Apply E-M algorithm
+    # 2.21 Store all paras in vectors/matrices
+    pi0.vec = c(pi0_0); pi1.vec = c(pi1_0); pi2.vec = c(pi2_0)
+    delta.vec = c(delta_0); l1.vec = c(l1_0); l2.vec = c(l2_0)
+    kappa1.vec = c(kappa1_0); kappa2.vec = c(kappa2_0)
+    
+    # 2.22 E-M iteration
+    iterNum = 0
+    epsilon = 100
+    while (epsilon > tol.EM & iterNum < max.iterNum) {
+      # print(iterNum)
+      ## Current value of paras
+      pi0 = pi0.vec[length(pi0.vec)]; pi1 = pi1.vec[length(pi1.vec)]; pi2 = pi2.vec[length(pi2.vec)]
+      delta = delta.vec[length(delta.vec)]; 
+      l1 = l1.vec[length(l1.vec)]; l2 = l2.vec[length(l2.vec)]
+      kappa1 = kappa1.vec[length(kappa1.vec)]; kappa2 = kappa2.vec[length(kappa2.vec)]
+      
+      ## E-step
+      pdf0 = sapply(seq(n.taxa), function(i) dnorm(Delta[i], delta, sqrt(nu[i])))
+      pdf1 = sapply(seq(n.taxa), function(i) dnorm(Delta[i], delta + l1, sqrt(nu[i] + kappa1)))
+      pdf2 = sapply(seq(n.taxa), function(i) dnorm(Delta[i], delta + l2, sqrt(nu[i] + kappa2)))
+      r0i = pi0*pdf0/(pi0*pdf0 + pi1*pdf1 + pi2*pdf2); r0i[is.na(r0i)] = 0
+      r1i = pi1*pdf1/(pi0*pdf0 + pi1*pdf1 + pi2*pdf2); r1i[is.na(r1i)] = 0
+      r2i = pi2*pdf2/(pi0*pdf0 + pi1*pdf1 + pi2*pdf2); r2i[is.na(r2i)] = 0
+      
+      ## M-step
+      pi0_new = mean(r0i, na.rm = T); pi1_new = mean(r1i, na.rm = T); pi2_new = mean(r2i, na.rm = T)
+      delta_new = sum(r0i*Delta/nu + r1i*(Delta-l1)/(nu+kappa1) + r2i*(Delta-l2)/(nu+kappa2), na.rm = T)/
+        sum(r0i/nu + r1i/(nu+kappa1) + r2i/(nu+kappa2), na.rm = T)
+      l1_new = min(sum(r1i*(Delta-delta)/(nu+kappa1), na.rm = T)/sum(r1i/(nu+kappa1), na.rm = T), 0)
+      l2_new = max(sum(r2i*(Delta-delta)/(nu+kappa2), na.rm = T)/sum(r2i/(nu+kappa2), na.rm = T), 0)
+      
+      # Nelder-Mead simplex algorithm for kappa1 and kappa2
+      obj.kappa1 = function(x){
+        log.pdf = log(sapply(seq(n.taxa), function(i) dnorm(Delta[i], delta+l1, sqrt(nu[i]+x))))
+        log.pdf[is.infinite(log.pdf)] = 0
+        -sum(r1i*log.pdf, na.rm = T)
+      }
+      kappa1_new = neldermead(x0 = kappa1, fn = obj.kappa1, lower = 0)$par
+      
+      obj.kappa2 = function(x){
+        log.pdf = log(sapply(seq(n.taxa), function(i) dnorm(Delta[i], delta+l2, sqrt(nu[i]+x))))
+        log.pdf[is.infinite(log.pdf)] = 0
+        -sum(r2i*log.pdf, na.rm = T)
+      }
+      kappa2_new = neldermead(x0 = kappa2, fn = obj.kappa2, lower = 0)$par
+      
+      ## Merge to the paras vectors/matrices
+      pi0.vec = c(pi0.vec, pi0_new); pi1.vec = c(pi1.vec, pi1_new); pi2.vec = c(pi2.vec, pi2_new)
+      delta.vec = c(delta.vec, delta_new)
+      l1.vec = c(l1.vec, l1_new); l2.vec = c(l2.vec, l2_new)
+      kappa1.vec = c(kappa1.vec, kappa1_new); kappa2.vec = c(kappa2.vec, kappa2_new)
+      
+      ## Calculate the new epsilon
+      epsilon = sqrt((pi0_new-pi0)^2 + (pi1_new-pi1)^2 + (pi2_new-pi2)^2 + (delta_new-delta)^2+
+                       (l1_new-l1)^2 + (l2_new-l2)^2 + (kappa1_new-kappa1)^2 + (kappa2_new-kappa2)^2)
+      iterNum = iterNum+1
+    }
+    # 2.23 Estimate the bias
+    bias.em.vec[i] = delta.vec[length(delta.vec)]
+    
+    # 2.24 The WLS estimator of bias
+    # Cluster 0
+    C0 = which(Delta >= quantile(Delta, pi1_new, na.rm = T) & Delta < quantile(Delta, 1 - pi2_new, na.rm = T))
+    # Cluster 1
+    C1 = which(Delta < quantile(Delta, pi1_new, na.rm = T))
+    # Cluster 2
+    C2 = which(Delta >= quantile(Delta, 1 - pi2_new, na.rm = T))
+    
+    nu_temp = nu
+    nu_temp[C1] = nu_temp[C1] + kappa1_new
+    nu_temp[C2] = nu_temp[C2] + kappa2_new
+    wls.deno = sum(1 / nu_temp)
+    
+    wls.nume = 1 / nu_temp
+    wls.nume[C0] = (wls.nume * Delta)[C0]
+    wls.nume[C1] = (wls.nume * (Delta - l1_new))[C1]
+    wls.nume[C2] = (wls.nume * (Delta - l2_new))[C2];   
+    wls.nume = sum(wls.nume)
+    
+    bias.wls.vec[i] = wls.nume / wls.deno
+    
+    # 2.25 Estimate the variance of bias  
+    bias.var.vec[i] = 1 / wls.deno
+    if (is.na(bias.var.vec[i])) bias.var.vec[i] = 0
+  }
+  bias.em.vec = c(0, bias.em.vec)
+  bias.wls.vec = c(0, bias.wls.vec)
+  
+  ### 3. Final estimates of mean absolute abundance and sampling fractions
+  mu.adj.comp = t(t(mu) + bias.em.vec)
+  colnames(mu.adj.comp) = grp.name; rownames(mu.adj.comp) = taxa.id
+  
+  d.adj = d - rep(bias.em.vec, sapply(grp.ind, length))
+  names(d.adj) = sample.id
+  
+  ### 4. Hypothesis testing
+  W.numerator = matrix(apply(mu.adj.comp, 1, function(x) combn(x, 2, FUN = diff)), ncol = n.taxa)
+  W.numerator = t(W.numerator)
+  # Variance of estimated mean difference
+  W.denominator1 = matrix(apply(mu.var, 1, function(x) combn(x, 2, FUN = sum)), ncol = n.taxa)
+  # Variance of delta_hat
+  if (length(bias.var.vec) < 2) {
+    W.denominator2 = bias.var.vec
+  }else {
+    W.denominator2 = c(bias.var.vec, combn(bias.var.vec, 2, FUN = sum))
+  }
+  W.denominator = W.denominator1 + W.denominator2 + 2 * sqrt(W.denominator1 * W.denominator2)
+  W.denominator = t(sqrt(W.denominator))
+  grp.pair = combn(n.grp, 2)
+  colnames(W.numerator) = sapply(1:ncol(grp.pair), function(x) 
+    paste0("mean.difference (", grp.name[grp.pair[2, x]], " - ", grp.name[grp.pair[1, x]], ")"))
+  colnames(W.denominator) = sapply(1:ncol(grp.pair), function(x) 
+    paste0("se (", grp.name[grp.pair[2, x]], " - ", grp.name[grp.pair[1, x]], ")"))
+  rownames(W.numerator) = taxa.id; rownames(W.denominator) = taxa.id
+  
+  if (length(grp.name) == 2) {
+    ## Two-group comparison
+    W = W.numerator/W.denominator
+    p.val = sapply(W, function(x) 2*pnorm(abs(x), mean = 0, sd = 1, lower.tail = F))
+    q.val = p.adjust(p.val, method = adj.method)
+    q.val[is.na(q.val)] = 1
+  } else {
+    ## Multi-group comparison: Permutation test
+    # Test statistics
+    W.each = W.numerator/W.denominator
+    W.each[is.na(W.each)] = 0 # Replace missing values with 0s
+    W = apply(abs(W.each), 1, max)
+    
+    # Test statistics under null
+    W.null.list = lapply(1:perNum, function(x) {
+      set.seed(x)
+      mu.adj.comp.null = matrix(rnorm(n.taxa * n.grp), nrow = n.taxa, ncol = n.grp) * sqrt(mu.var)
+      W.numerator.null = matrix(apply(mu.adj.comp.null, 1, function(x) combn(x, 2, FUN = diff)), ncol = n.taxa)
+      W.numerator.null = t(W.numerator.null)
+      
+      W.each.null = W.numerator.null/W.denominator
+      W.each.null[is.na(W.each.null)] = 0
+      W.null = apply(abs(W.each.null), 1, max)
+      return(W.null)
+    })
+    W.null = Reduce('cbind', W.null.list)
+    
+    # Test results
+    p.val = apply(W.null - W, 1, function(x) sum(x > 0)/perNum)
+    q.val = p.adjust(p.val, method = adj.method)
+    q.val[is.na(q.val)] = 1
+  }
+  
+  W = matrix(W, ncol = 1)
+  colnames(W) = "W"
+  res.comp = data.frame(W.numerator, W.denominator, W = W, p.val, q.val, check.names = FALSE)
+  
+  ### 5. Combine results from structural zeros
+  mu.adj = matrix(NA, nrow = n.taxa.raw, ncol = n.grp)
+  colnames(mu.adj) = grp.name; rownames(mu.adj) = taxa.id.raw
+  mu.adj[comp.taxa.pos, ] = mu.adj.comp
+  
+  if (length(comp.taxa.pos) < n.taxa.raw) {
+    O.incomp = feature.table[-comp.taxa.pos, ]
+    ind.incomp = struc.zero[-comp.taxa.pos, rep(1:n.grp, times = n.samp.grp)]
+    y.incomp = log(O.incomp + 1)
+    d.incomp = t(t(1 - ind.incomp) * d) # Sampling fractions for entries considered to be structural zeros are set to be 0s
+    y.adj.incomp = y.incomp - d.incomp
+    mu.incomp = t(apply(y.adj.incomp, 1, function(i) 
+      tapply(i, rep(1:n.grp, n.samp.grp), function(j) mean(j, na.rm = T))))
+    # In case of negative values for mean absolute abundances
+    mu.adj.incomp = mu.incomp
+    mu.adj.incomp[mu.adj.incomp == 0] = NA
+    mu.adj.incomp = t(t(mu.adj.incomp) + abs(apply(mu.incomp, 2, min)))
+    mu.adj.incomp[is.na(mu.adj.incomp)] = 0
+  }else{
+    mu.adj.incomp = NA
+  }
+  mu.adj[-comp.taxa.pos, ] = mu.adj.incomp
+  colnames(mu.adj) = paste0("mean.absolute.abundance (", grp.name, ")")
+  rownames(mu.adj) = taxa.id.raw
+  
+  ### 6. Outputs
+  W.numerator = matrix(apply(mu.adj, 1, function(x) combn(x, 2, FUN = diff)), ncol = n.taxa.raw)
+  W.numerator = t(W.numerator)
+  W.denominator = matrix(0, ncol = ncol(W.numerator), nrow = nrow(W.numerator))
+  
+  res = data.frame(W.numerator, W.denominator, W = Inf, p.val = 0, q.val = 0, check.names = FALSE)
+  res[comp.taxa.pos, ] = res.comp
+  colnames(res) = colnames(res.comp); rownames(res) = taxa.id.raw
+  res = res%>%mutate(diff.abn = ifelse(q.val < alpha, TRUE, FALSE))
+  
+  out = list(feature.table = feature.table, res = res, d = d.adj, mu = mu.adj, bias.em = bias.em.vec, bias.wls = bias.wls.vec)
+  return(out)
+}
