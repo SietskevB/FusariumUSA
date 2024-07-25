@@ -1,0 +1,157 @@
+# R 3.6.1
+
+library(phyloseq) # 1.30.0
+library(ggplot2) # 3.4.2
+library(stringr) # 1.4.0
+
+theme_set(theme_bw()) #sets background of plots to white with a grid
+theme_set(theme_classic()) #no grid
+
+
+###################################################################################################################
+
+
+setwd("yourdirectory") # CHANGE ME
+
+metadata <- import_qiime_sample_data("USFall-ITS2-metadata-noblank-decontam.txt")
+metadata$fieldcond <- paste(metadata$field, metadata$condition, sep = "_")
+
+# Data
+data.fall <- import_biom(BIOMfilename = "repseqtable-filtered-n4-53-UNITE3-USFall-ITS2-taxonomy.biom")
+data.fall <- merge_phyloseq(data.fall, metadata)
+colnames(tax_table(data.fall)) <- c("Kingdom", "Phylum", "Class", "Order", "Family", "Genus", "Species")
+# 254 unique ASVs
+
+# Filter samples with < 1061 reads
+data.fall.filt <- prune_samples(sample_sums(data.fall)>=1061, data.fall)
+
+# Filter field 1
+data.fall.sub <- subset_samples(data.fall.filt, field != 1)
+
+# Data per field
+data.f2 <- subset_samples(data.fall.filt, field == 2)
+data.f3 <- subset_samples(data.fall.filt, field == 3)
+data.f4 <- subset_samples(data.fall.filt, field == 4)
+
+# Data per field filtered for ASVs with zero counts
+data.f2 <- prune_taxa(taxa_sums(data.f2) > 0, data.f2) # 187 ASVs
+data.f3 <- prune_taxa(taxa_sums(data.f3) > 0, data.f3) # 219 ASVs
+data.f4 <- prune_taxa(taxa_sums(data.f4) > 0, data.f4) # 169 ASVs
+
+# Make sure there's no ASVs left with 0 counts
+data.f2 <- prune_taxa(taxa_sums(data.f2) > 0, data.f2) # 175 ASVs
+data.f3 <- prune_taxa(taxa_sums(data.f3) > 0, data.f3) # 212 ASVs
+data.f4 <- prune_taxa(taxa_sums(data.f4) > 0, data.f4) # 161 ASVs
+
+# And no samples with 0 ASV counts!
+data.f2 <- prune_samples(sample_sums(data.f2) >= 1, data.f2)
+data.f3 <- prune_samples(sample_sums(data.f3) >= 1, data.f3)
+data.f4 <- prune_samples(sample_sums(data.f4) >= 1, data.f4)
+
+
+###################################################################################################################
+
+
+data.sp <- tax_glom(data.f4, taxrank = "Species") # CHANGE ME
+
+# Relative abundance (%) per sample
+feature.rel = transform_sample_counts(data.sp, function(x) {x/sum(x)})
+
+data.plot <- psmelt(feature.rel)
+data.plot$percent <- data.plot$Abundance * 100
+
+# Subset for Fusarium solani
+f.select <- c("s__Fusarium_solani")
+
+# New factor in data
+data.plot$Species <- as.character(data.plot$Species)
+data.plot$Species = str_replace_all(data.plot$Species, '"', "")
+
+data.plot$group <- factor(ifelse(data.plot$Species %in% f.select & data.plot$condition == "Soil", "Fusarium solani Soil", ifelse(data.plot$Species %in% f.select & data.plot$condition == "Healthy", "Fusarium solani Healthy", ifelse(data.plot$Species %in% f.select & data.plot$condition == "Infected", "Fusarium solani Infected", "Other"))),
+                          levels = c("Fusarium solani Healthy", "Fusarium solani Infected", "Fusarium solani Soil", "Other"))
+
+# Arrange data by Fusarium abundance, descending
+data.combined <- data.plot[order(data.plot$group, -data.plot$percent),]
+
+# Factorize sample names to customize order
+names.soil <- as.character(unique(data.combined$names[which(data.combined$condition == "Soil")]))
+names.healthy <- as.character(unique(data.combined$names[which(data.combined$condition == "Healthy")]))
+names.infected <- as.character(unique(data.combined$names[which(data.combined$condition == "Infected")]))
+data.combined$names.fac <- factor(data.combined$names, levels = c(names.healthy, names.infected, names.soil))
+
+# Actual subset
+data.sub <- data.combined[data.combined$Species == "s__Fusarium_solani",]
+
+# Plot colors
+mapcol.f2 <- c("#f0adc2", "#ad365b", "#5e5b5b")
+mapcol.f3 <- c("#a4dbd6", "#32847a", "#5e5b5b")
+mapcol.f4 <- c("#aaace0", "#3e4082", "#5e5b5b")
+
+# Plot
+plot <- ggplot(data = data.sub, aes(x = group, y = percent, fill = condition)) +
+  geom_boxplot(outlier.shape = NA) +
+  geom_point(aes(x = group, y = percent, color = condition), 
+             shape = 19, size = 2, position = position_jitterdodge(jitter.width = 0.1)) +
+  scale_fill_manual(name = "Sample Type", values = mapcol.f4) + # CHANGE ME
+  scale_color_manual(values = c(rep("black", times = length(unique(data.plot$group))))) +
+  theme(axis.text.x = element_text(angle = 90)) +
+  guides(color = "none")
+
+print(plot)
+
+ggsave("plot_box_USF4_Fusarium_relabundance.svg", plot, width = 380, height = 280, units = "mm", dpi = 1200) # CHANGE ME
+
+dev.off()
+
+
+###################################################################################################################
+
+
+# Statistics
+# Per field; change data.sub for each field (section above)
+
+# Calculate averages
+avg.healthy <- c(mean(data.sub$Abundance[which(data.sub$group == "Fusarium solani Healthy")]))
+avg.infected <- c(mean(data.sub$Abundance[which(data.sub$group == "Fusarium solani Infected")]))
+avg.soil <- c(mean(data.sub$Abundance[which(data.sub$group == "Fusarium solani Soil")]))
+
+# Field 2: healthy = 0.179; infected = 0.448; soil = 0.026
+# Field 3: healthy = 0.268; infected = 0.522; soil = 0.082
+# Field 4: healthy = 0.185; infected = 0.360; soil = 0.108
+
+# ANOVA
+res.aov <- aov(Abundance ~ group, data = data.sub)
+summary(res.aov)
+
+# Field 2: p < 0.001
+# Field 3: p < 0.001
+# Field 4: no significant comparisons (p = 0.122)
+
+# Check assumptions for ANOVA
+# Based on residuals calculated in ANOVA procedures
+aov.residuals <- residuals(res.aov)
+res.sw <- shapiro.test(x = aov.residuals)
+print(res.sw)
+
+# Field 2: p < 0.05 
+# Field 3: p < 0.05 
+# Field 4: p < 0.05 
+# Residuals not normally distributed; need alternative test
+
+# Kruskal Wallis
+res.kw <- kruskal.test(Abundance ~ group, data = data.sub)
+print(res.kw)
+
+# Field 2: p = 0.00063
+# Field 3: p = 0.00025
+# Field 4: p = 0.017
+
+# Pairwise-comparisons Wilcoxon
+# Post hoc for Kruskal-Wallis
+res.wil <- pairwise.wilcox.test(data.sub$Abundance, data.sub$group,
+                                p.adjust.method = "BH")
+print(res.wil)
+
+# Field 2: Healthy vs Soil p = 0.032; Infected vs Soil p = 0.002; Infected vs Healthy p = 0.016
+# Field 3: Healthy vs Soil p = 0.027; Infected vs Soil p = 0.002; Infected vs Healthy p = 0.006
+# Field 4: Healthy vs Soil p = 0.414; Infected vs Soil p = 0.053; Infected vs Healthy p = 0.046
