@@ -10,7 +10,7 @@ Unfortunately, some files were too large to include on GitHub. This includes sev
 With the raw sequencing data however, it should be possible to follow our analyses using the code provided here.
 
 ## IMPORTANT
-The field work originally focused on four fields. In the manuscript, data from three fields is shown.
+The field work originally included four fields. In the manuscript, data from three fields is shown.
 
 One field was excluded due to low disease severity and uncertainty regarding the identity of the disease that was observed.
 You can check the metadata for all fields, including the excluded field, in [USfields_samplingdata.xslx](USfields_samplingdata.xlsx).
