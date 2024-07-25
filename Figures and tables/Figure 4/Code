@@ -1,0 +1,156 @@
+# Fig. 4 consists of four panels
+# 4A: Bray-Curtis ordination of 16S data in all fields, colored for field
+# 4B: Jaccard ordination of ITS2 data in all fields, colored for field
+# 4C: Bray-Curtis ordination of 16S data in all fields, colored for sample type
+# 4D: Jaccard ordination of ITS2 data in all fields, colored for sample type
+
+# R 3.6.1
+
+library(phyloseq) # 1.30.0
+library(ggplot2) # 3.4.2
+
+theme_set(theme_bw())
+theme_set(theme_classic())
+
+
+###################################################################################################################
+
+
+# Fig. 4A and 4C: ordination plots for 16S data
+
+setwd("yourdirectory") # CHANGE ME
+
+metadata <- import_qiime_sample_data("USfields-16S-noblank-metadata.txt")
+
+# Data
+data <- import_biom(BIOMfilename = "repseqtable-filt-n27-195-16S-USfields-taxonomy.biom")
+data <- merge_phyloseq(data, metadata)
+colnames(tax_table(data)) <- c("Kingdom", "Phylum", "Class", "Order", "Family", "Genus", "Species")
+# 6428 ASVs
+
+# Exclude field 1
+data.fsub <- subset_samples(data, Field != 1)
+
+
+# Ordination based on relative abundances
+# Bray Curtis
+feature.rel = transform_sample_counts(data.fsub, function(x) {x/sum(x)})
+
+# Rearrange levels in Sample Type and Field
+feature.rel@sam_data$Sample_Type <- factor(feature.rel@sam_data$Condition, levels = c("Healthy", "Infected", "Soil"))
+feature.rel@sam_data$Field <- factor(feature.rel@sam_data$Field, levels = c("2", "3", "4"))
+
+# Calculate ordination variable
+ord.bray <- ordinate(feature.rel, "PCoA", "bray")
+
+
+# Plot 4A
+PCoA.bray = plot_ordination(feature.rel, ord.bray, type="samples") +
+  geom_point(aes(color=Condition, shape = Condition), size=7) + 
+  scale_colour_manual(values = c("#d65678", "#6db4ad", "#6a65a3")) + 
+  #xlab ("\nAxis.1 [32.2%]") + # USE ME for layout
+  #ylab ("Axis.2 [15%] \n") + # USE ME for layout
+  #scale_x_continuous(limits = c(-0.29, 0.55), breaks = seq(-0.4, 0.5, 0.2)) + # USE ME for layout
+  #scale_y_continuous(limits = c(-0.4, 0.4), breaks = seq(-0.4, 0.4, 0.2)) + # USE ME for layout
+  theme(legend.position = "none") +
+  theme(text = element_text(size = 28)) +
+  theme(axis.text = element_text(size = 28))
+  
+print(PCoA.bray)
+
+ggsave("plot_USFall_16S_PCoA_BC_field_nobulk_nolegend.svg.svg", PCoA.bray, width = 380, height = 280, units = "mm", dpi = 1200)
+
+dev.off()
+
+
+# Plot 4C
+PCoA.bray = plot_ordination(feature.rel, ord.bray, type="samples") +
+  geom_point(aes(color=Condition, shape = Condition), size=7) + 
+  scale_colour_manual(values = c("#ffce99", "#bd6506", "#737373"))) + 
+  #xlab ("\nAxis.1 [32.2%]") + # USE ME for layout
+  #ylab ("Axis.2 [15%] \n") + # USE ME for layout
+  #scale_x_continuous(limits = c(-0.29, 0.55), breaks = seq(-0.4, 0.5, 0.2)) + # USE ME for layout
+  #scale_y_continuous(limits = c(-0.4, 0.4), breaks = seq(-0.4, 0.4, 0.2)) + # USE ME for layout
+  theme(legend.position = "none") +
+  theme(text = element_text(size = 28)) +
+  theme(axis.text = element_text(size = 28))
+
+print(PCoA.bray)
+
+ggsave("plot_USFall_16S_PCoA_BC_condition_nobulk_nolegend.svg.svg", PCoA.bray, width = 380, height = 280, units = "mm", dpi = 1200)
+
+dev.off()
+
+
+###################################################################################################################
+
+
+# Fig. 4B and 4D: ordination plots for ITS2 data
+
+setwd("yourdirectory") # CHANGE ME
+
+metadata <- import_qiime_sample_data("USFall-ITS2-metadata-noblank-decontam.txt")
+metadata$fieldcond <- paste(metadata$field, metadata$condition, sep = "_")
+
+# Data
+data.fall <- import_biom(BIOMfilename = "repseqtable-filtered-n4-53-UNITE3-USFall-ITS2-taxonomy.biom")
+data.fall <- merge_phyloseq(data.fall, metadata)
+colnames(tax_table(data.fall)) <- c("Kingdom", "Phylum", "Class", "Order", "Family", "Genus", "Species")
+# 254 ASVs
+
+# Filter samples with < 1061 reads
+data.fall.filt <- prune_samples(sample_sums(data.fall)>=1061, data.fall)
+
+# Filter field 1
+data.fall.sub <- subset_samples(data.fall.filt, field != 1)
+
+
+# Ordination irrespective of abundances ASVs
+# Jaccard (not available in phyloseq::ordination)
+# Don't use vegan -> Jaccard still based on abundances
+# Use phyloseq with binary == TRUE, based on vegdist package
+
+# Rearrange levels in Sample Type and field
+data.fall.sub@sam_data$Sample_Type <- factor(data.fall.sub@sam_data$condition, levels = c("Healthy", "Infected", "Soil"))
+data.fall.sub@sam_data$field <- factor(data.fall.sub@sam_data$field, levels = c(2, 3, 4))
+
+# Calculate ordination variable
+dist.jac <- phyloseq::distance(data.fall.sub, "jaccard", binary = TRUE)
+ord.jac <- ordinate(data.fall.sub, method = "PCoA", distance = dist.jac)
+
+
+# Plot 4B
+PCoA.jac = plot_ordination(data.fall.sub, ord.jac, type="samples") +
+  geom_point(aes(color=field, shape = field), size=7) + 
+  scale_colour_manual(values = c("#d65678", "#6db4ad", "#6a65a3")) + 
+  #xlab ("\nAxis.1 [4.9%]") + # USE ME for layout
+  #ylab ("Axis.2 [3.8%] \n") + # USE ME for layout
+  #scale_x_continuous(limits = c(-0.28, 0.42), breaks = seq(-0.4, 0.4, 0.2)) + # USE ME for layout
+  #scale_y_continuous(limits = c(-0.32, 0.3), breaks = seq(-0.2, 0.2, 0.2)) + # USE ME for layout
+  theme(legend.position = "none") +
+  theme(text = element_text(size = 28)) +
+  theme(axis.text = element_text(size = 28)) 
+
+print(PCoA.jac)
+
+ggsave("plot_USFall_ITS2_PCoA_Jaccard_field_nobulk_nolegend.svg", PCoA.jac, width = 380, height = 280, units = "mm", dpi = 1200)
+
+dev.off()
+
+# Plot 4D
+PCoA.jac = plot_ordination(data.fall.sub, ord.jac, type="samples") +
+  geom_point(aes(color=condition, shape = condition), size=7) + 
+  scale_colour_manual(values = c("#ffce99", "#bd6506", "#737373")) +
+  #xlab ("\nAxis.1 [4.9%]") + # USE ME for layout
+  #ylab ("Axis.2 [3.8%] \n") + # USE ME for layout
+  #scale_x_continuous(limits = c(-0.28, 0.42), breaks = seq(-0.4, 0.4, 0.2)) + # USE ME for layout
+  #scale_y_continuous(limits = c(-0.32, 0.3), breaks = seq(-0.2, 0.2, 0.2)) + # USE ME for layout
+  theme(legend.position = "none") +
+  theme(text = element_text(size = 28)) +
+  theme(axis.text = element_text(size = 28)) 
+
+print(PCoA.jac)
+
+ggsave("plot_USFall_ITS2_PCoA_Jaccard_condition_nobulk_nolegend.svg", PCoA.jac, width = 380, height = 280, units = "mm", dpi = 1200)
+
+dev.off()
