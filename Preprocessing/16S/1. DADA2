@@ -17,7 +17,7 @@ rename  's/NS\.1671\.002\.FLD_ill_[0-9][0-9][0-9]i7---IDT_i5[0-9]\.//' *
 # Start in R
 # To remove amplification primer sequences
 # Note: samples demultiplexed by seq company, index primer seqs already removed
-# And trim sequences based on quality scores
+# Trim sequences based on quality scores
 # And run a custom DADA2
 
 # Use custom DADA2 because NovaSeq data has binned quality scores 
