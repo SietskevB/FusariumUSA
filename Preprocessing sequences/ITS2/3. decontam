@@ -7,8 +7,8 @@
 # No samples or ASVs filtered prior to this step
 
 # Prep data
-# Make sure that top empty row is not present, DO NOT add taxonomy
 # Be sure to rename the first column to ID
+# Do not add taxonomy
 # File name = USFall-ITS2-featuretable-hash-forR.txt
 
 library("decontam") # 1.20.0
@@ -74,7 +74,6 @@ ggplot(data=df.pa, aes(x=feature.pa.neg, y=feature.pa.pos, color=contaminant)) +
   geom_abline(intercept = 0, slope = 20.5)
 dev.off()
 
-# Seems like (only) true contaminants were detected
 
 # Export contaminant ASVs
 df.pa <- df.pa[which(df.pa$contaminant == "TRUE"),]
@@ -85,4 +84,4 @@ write.csv(df.pa, file = "USFall-ITS2-contaminants.csv")
 my_subset <- subset(otu_table(feature.table), !rownames(otu_table(feature.table)) %in% rownames(df.pa))
 feature.sub <- merge_phyloseq(my_subset, sample_data(feature.table))
 
-write.csv(otu_table(feature.sub), file = "repseqtable-decontam-ITS2-USFields.csv")
+write.csv(otu_table(feature.sub), file = "USFall-ITS2-repseqtable-decontam.csv")
