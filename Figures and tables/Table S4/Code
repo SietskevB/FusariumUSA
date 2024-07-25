@@ -1,0 +1,47 @@
+# R 3.6.1
+
+library(phyloseq) # 1.30.0
+library(pairwiseAdonis) # 0.4
+
+setwd("yourdirectory") # CHANGE ME
+
+
+########################################################################################
+
+
+# Table S4
+# ITS2 data
+# Jaccard distances
+
+metadata <- import_qiime_sample_data("USFall-ITS2-metadata-noblank-decontam.txt")
+metadata$fieldcond <- paste(metadata$field, metadata$condition, sep = "_")
+
+# Data
+data.fall <- import_biom(BIOMfilename = "repseqtable-filtered-n4-53-UNITE3-USFall-ITS2-taxonomy.biom")
+data.fall <- merge_phyloseq(data.fall, metadata)
+colnames(tax_table(data.fall)) <- c("Kingdom", "Phylum", "Class", "Order", "Family", "Genus", "Species")
+# 254 unique ASVs
+
+# Filter samples with < 1061 reads
+data.fall.filt <- prune_samples(sample_sums(data.fall)>=1061, data.fall)
+
+
+########################################################################################
+
+
+# Pairwise ADONIS
+# Beware: results vary a little between tests on same data
+
+# Jaccard distances
+dist.jac <- phyloseq::distance(data.fall.filt, "jaccard", binary = TRUE)
+
+# Stat test: field
+data.pairwise <- pairwise.adonis(dist.jac, factors = sample_data(data.fall.filt)$field,
+                                 sim.method = "jaccard")
+data.pairwise
+
+
+# Stat test: condition
+data.pairwise <- pairwise.adonis(dist.jac, factors = sample_data(data.fall.filt)$condition,
+                                 sim.method = "jaccard")
+data.pairwise
