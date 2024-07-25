@@ -1,0 +1,7 @@
+Leaf_Field	"0"	"1"	"2"	"3"	"4"
+Healthy_F1	29	0	0	0	0
+Infected_F1	0	3	6	16	4
+Healthy_F2	30	0	0	0	0
+Infected_F2	0	5	10	11	4
+Healthy_F3	28	0	0	0	0
+Infected_F3	0	0	6	17	5
