@@ -1,0 +1,207 @@
+# R 3.6.1
+
+library(phyloseq) # 1.30.0
+library(ggplot2) # 3.4.2
+library(vegan) # 2.5.7
+library(tibble) # 3.1.6
+library(reshape2) # 1.4.4
+
+theme_set(theme_bw()) #sets background of plots to white with a grid
+theme_set(theme_classic()) #no grid
+
+
+###################################################################################################################
+
+
+# Fig. S2ACE
+# 16S
+
+setwd("yourdirectory") # CHANGE ME
+
+metadata <- import_qiime_sample_data("USfields-16S-noblank-metadata.txt")
+meta2 <- metadata
+meta2$sampleid <- gsub("\\.", "_", meta2$sampleid)
+
+# Data
+data <- import_biom(BIOMfilename = "repseqtable-filt-n27-195-16S-USfields-taxonomy.biom")
+data <- merge_phyloseq(data, metadata)
+colnames(tax_table(data)) <- c("Kingdom", "Phylum", "Class", "Order", "Family", "Genus", "Species")
+
+# Exclude field 1
+data.fsub <- subset_samples(data, Field != 1)
+
+# Filter per field
+data.f2 <- subset_samples(data.fsub, Field == "2")
+data.f3 <- subset_samples(data.fsub, Field == "3")
+data.f4 <- subset_samples(data.fsub, Field == "4")
+
+# Data per field filtered for ASVs with zero counts
+data.f2 <- prune_taxa(taxa_sums(data.f2) > 0, data.f2) # 6189 ASVs
+data.f3 <- prune_taxa(taxa_sums(data.f3) > 0, data.f3) # 6016 ASVs
+data.f4 <- prune_taxa(taxa_sums(data.f4) > 0, data.f4) # 6269 ASVs
+
+
+# Species accumulation curves per field
+# Need counts tables with absolute counts per sample type
+# Samples in rows, ASVs in columns
+
+data <- data.frame(t(otu_table(data.f2))) # CHANGE ME for each field
+
+
+# Create rarefaction curve 
+data.rare <- rarecurve(data, step = 100, col = "blue", cex = 0.6) #label = FALSE, )
+
+# Perform the next trick to make the nested list into dataframe
+# Which is problematic because list lengths are unequal
+# This code deals with that issue
+
+indx <- sapply(data.rare, length)
+res <- as.data.frame(do.call(rbind,lapply(data.rare, `length<-`,
+                                          max(indx))))
+
+res <- t(res)
+
+colnames(res) <- rownames(data) # these are in exact same order, but always check
+res <- data.frame(res)
+rownames(res) <- as.integer(attributes(data.rare[[54]])$Subsample) # take sequences from sample with deepest seq depth
+# Field 2: sample 54
+# Field 3: sample 45
+# Field 4: sample 49
+
+res <- rownames_to_column(res, var = "rowname")
+
+data.plot <- melt(res)
+
+data.plot <- na.omit(data.plot)
+data.plot$rowname <- as.integer(data.plot$rowname)
+
+# Add metadata variables
+data.plot$variable <- gsub("\\.", "_",data.plot$variable)
+data.plot$type <- meta2$Condition[match(data.plot$variable, meta2$sampleid)]
+data.plot$type <- factor(data.plot$type, levels = c("Healthy", "Infected", "Soil"))
+
+
+# Fig. S2ACE
+# Modify code below for each subplot (ACE)
+
+options(scipen=999)
+
+plot <- ggplot(data = data.plot, aes(x = rowname, y = value, group = variable, col = type)) +
+  geom_line(linewidth = 1) +
+  scale_colour_manual(values = c("#F0ADC2", "#AD365B", "#969696"), labels = c("Healthy plant", "Diseased plant", "Soil")) + # field 2
+  #scale_colour_manual(values = c("#A4DBD6", "#32847A", "#969696"), labels = c("Healthy plant", "Diseased plant", "Soil")) + # field 3
+  #scale_colour_manual(values = c("#AAACE0", "#3E4082", "#969696"), labels = c("Healthy plant", "Diseased plant", "Soil")) + # field 4
+  theme(axis.title.x = element_blank()) +
+  scale_y_continuous(limits = c(0, 2500)) + 
+  theme(legend.text = element_text(size = 28), legend.box.margin = margin(0, 0, 0, 2, "cm")) +
+  theme(text = element_text(size = 28)) +
+  theme(axis.text = element_text(size = 28))
+
+plot
+
+ggsave("plot_field2_16S_seqdepth.svg", plot, width = 420, height = 240, units = "mm", dpi = 1200)
+
+dev.off()
+
+
+###################################################################################################################
+
+
+# Fig. S2BDF
+# ITS2
+
+setwd("yourdirectory") # CHANGE ME
+
+metadata <- import_qiime_sample_data("USFall-ITS2-metadata-noblank-decontam.txt")
+meta2 <- metadata
+meta2$sampleid <- gsub("\\.", "_", meta2$sampleid)
+
+# Data
+data.fall <- import_biom(BIOMfilename = "repseqtable-filtered-n4-53-UNITE3-USFall-ITS2-taxonomy.biom")
+data.fall <- merge_phyloseq(data.fall, metadata)
+colnames(tax_table(data.fall)) <- c("Kingdom", "Phylum", "Class", "Order", "Family", "Genus", "Species")
+
+# Filter samples with < 1061 reads
+data.fall.filt <- prune_samples(sample_sums(data.fall)>=1061, data.fall)
+
+# Filter field 1
+data.fall.sub <- subset_samples(data.fall.filt, field != 1)
+
+# Data per field
+data.f2 <- subset_samples(data.fall.filt, field == 2)
+data.f3 <- subset_samples(data.fall.filt, field == 3)
+data.f4 <- subset_samples(data.fall.filt, field == 4)
+
+# Data per field filtered for ASVs with zero counts
+data.f2 <- prune_taxa(taxa_sums(data.f2) > 0, data.f2) # 187 ASVs
+data.f3 <- prune_taxa(taxa_sums(data.f3) > 0, data.f3) # 219 ASVs
+data.f4 <- prune_taxa(taxa_sums(data.f4) > 0, data.f4) # 169 ASVs
+
+
+# Species accumulation curves
+# Need counts tables with absolute counts per sample type
+# Samples in rows, ASVs in columns
+
+data <- data.frame(t(otu_table(data.f2)))
+
+# Create rarefaction curve 
+data.rare <- rarecurve(data, step = 100, col = "blue", cex = 0.6) #label = FALSE, )
+
+# Perform the next trick to make the nested list into dataframe
+# Which is problematic because list lengths are unequal
+# This code deals with that issue
+
+indx <- sapply(data.rare, length)
+res <- as.data.frame(do.call(rbind,lapply(data.rare, `length<-`,
+                                          max(indx))))
+
+res <- t(res)
+
+colnames(res) <- rownames(data) # these are in exact same order, but always check
+res <- data.frame(res)
+rownames(res) <- as.integer(attributes(data.rare[[35]])$Subsample) # take sequences from sample with deepest seq depth
+# Field 2: sample 35
+# Field 3: sample 16
+# Field 4: sample 31
+
+res <- rownames_to_column(res, var = "rowname")
+
+data.plot <- melt(res)
+
+data.plot <- na.omit(data.plot)
+data.plot$rowname <- as.integer(data.plot$rowname)
+
+# Add metadata variables
+data.plot$variable <- gsub("\\.", "_",data.plot$variable)
+data.plot$type <- meta2$condition[match(data.plot$variable, meta2$sampleid)]
+data.plot$type <- factor(data.plot$type, levels = c("Healthy", "Infected", "Soil"))
+
+
+# Fig. S2BDF
+# Modify code below for each subplot (BDF)
+
+options(scipen=999)
+
+plot <- ggplot(data = data.plot, aes(x = rowname, y = value, group = variable, col = type)) +
+  geom_line(linewidth = 1) +
+  scale_colour_manual(values = c("#F0ADC2", "#AD365B", "#969696"), labels = c("Healthy plant", "Diseased plant", "Soil")) + # field 2
+  #scale_colour_manual(values = c("#A4DBD6", "#32847A", "#969696"), labels = c("Healthy plant", "Diseased plant", "Soil")) + # field 3
+  #scale_colour_manual(values = c("#AAACE0", "#3E4082", "#969696"), labels = c("Healthy plant", "Diseased plant", "Soil")) + # field 4
+  theme(axis.title.x = element_blank()) +
+  scale_y_continuous(limits = c(0, 30)) + # ITS2, fig. S2BF = field 2 and 4
+  #scale_y_continuous(limits = c(0, 40)) + # ITS2, fig. S2D = field 3
+  theme(legend.text = element_text(size = 28), legend.box.margin = margin(0, 0, 0, 2, "cm")) +
+  theme(text = element_text(size = 28)) +
+  theme(axis.text = element_text(size = 28))
+
+plot
+
+ggsave("plot_field2_16S_seqdepth.svg", plot, width = 420, height = 240, units = "mm", dpi = 1200)
+
+dev.off()
+
+
+###################################################################################################################
+
+
+# Plots were combined and modified for layout in Adobe Illustrator
