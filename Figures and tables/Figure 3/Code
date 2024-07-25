@@ -1,0 +1,340 @@
+# Fig. 3 is composed of three separate figures
+# 3A: Venn diagram (R)
+# 3B: phlyogenetic tree (Qiime2, iTOL) and heatmap (R)
+# Components were combined in Adobe Illustrator
+
+
+###################################################################################################################
+
+
+# R 3.6.1
+# Fig. 3A: Venn diagram
+# Fig. 3B: heatmap
+
+library(phyloseq) # 1.30.0
+library(ggplot2) # 3.4.2
+library(VennDiagram) # 1.7.3
+library(dplyr) # 1.0.8
+library(tidyheatmap) # 0.0.0.9000
+
+theme_set(theme_bw())
+theme_set(theme_classic())
+
+setwd("yourdirectory") # CHANGE ME
+
+metadata <- import_qiime_sample_data("USFall-ITS2-metadata-noblank-decontam.txt")
+metadata$fieldcond <- paste(metadata$field, metadata$condition, sep = "_")
+
+# Data
+data.fall <- import_biom(BIOMfilename = "repseqtable-filtered-n4-53-UNITE3-USFall-ITS2-taxonomy.biom")
+data.fall <- merge_phyloseq(data.fall, metadata)
+colnames(tax_table(data.fall)) <- c("Kingdom", "Phylum", "Class", "Order", "Family", "Genus", "Species")
+# 254 unique ASVs
+
+# Filter samples with < 1061 reads
+data.fall.filt <- prune_samples(sample_sums(data.fall)>=1061, data.fall)
+
+# Filter field 1
+data.fall.sub <- subset_samples(data.fall.filt, field != 1)
+
+# Data per field
+data.f2 <- subset_samples(data.fall.filt, field == 2)
+data.f3 <- subset_samples(data.fall.filt, field == 3)
+data.f4 <- subset_samples(data.fall.filt, field == 4)
+
+# Data per field filtered for ASVs with zero counts
+data.f2 <- prune_taxa(taxa_sums(data.f2) > 0, data.f2) # 187 ASVs
+data.f3 <- prune_taxa(taxa_sums(data.f3) > 0, data.f3) # 219 ASVs
+data.f4 <- prune_taxa(taxa_sums(data.f4) > 0, data.f4) # 169 ASVs
+
+# Make sure there's no ASVs left with 0 counts
+data.f2 <- prune_taxa(taxa_sums(data.f2) > 0, data.f2) # 175 ASVs
+data.f3 <- prune_taxa(taxa_sums(data.f3) > 0, data.f3) # 212 ASVs
+data.f4 <- prune_taxa(taxa_sums(data.f4) > 0, data.f4) # 161 ASVs
+
+# And no samples with 0 ASV counts
+data.f2 <- prune_samples(sample_sums(data.f2) >= 1, data.f2)
+data.f3 <- prune_samples(sample_sums(data.f3) >= 1, data.f3)
+data.f4 <- prune_samples(sample_sums(data.f4) >= 1, data.f4)
+
+
+###################################################################################################################
+
+
+# Fig. 3A: Venn diagram
+tax_table(data.f2) <- gsub('\\"', '', tax_table(data.f2))
+tax <- data.frame(tax_table(data.f2))
+
+sol.f2 <- rownames(tax[which(tax$Species == "s__Fusarium_solani"),])
+
+tax_table(data.f3) <- gsub('\\"', '', tax_table(data.f3))
+tax <- data.frame(tax_table(data.f3))
+
+sol.f3 <- rownames(tax[which(tax$Species == "s__Fusarium_solani"),])
+
+tax_table(data.f4) <- gsub('\\"', '', tax_table(data.f4))
+tax <- data.frame(tax_table(data.f4))
+
+sol.f4 <- rownames(tax[which(tax$Species == "s__Fusarium_solani"),])
+
+# Field 2: 30 F. solani ASVs
+# Field 3: 42
+# Field 4: 35
+
+# Check which ASVs are present in all three fields
+sol.f2f3 <- sol.f2[sol.f2 %in% sol.f3] 
+sol.f2f3f4 <- sol.f2f3[sol.f2f3 %in% sol.f4]
+
+myCol <- c("#F0ADC2", "#A4DBD6", "#AAACE0")
+
+venn.diagram(
+  x = list(sol.f2, sol.f3, sol.f4),
+  category.names = c("Field 2" , "Field 3" , "Field 4"),
+  filename = 'Venn_USFields_Fsolani_ITS2.png',
+  output=TRUE,
+  # Output features
+  imagetype="png" ,
+  height = 1200 , 
+  width = 1200 , 
+  resolution = 300,
+  compression = "lzw",
+  # Circles
+  lwd = 1,
+  #lty = 'blank',
+  fill = myCol,
+  # Numbers
+  cex = .6,
+  fontface = "bold",
+  fontfamily = "sans",
+  # Set names
+  cat.cex = 0.6,
+  cat.fontface = "bold",
+  cat.default.pos = "outer",
+  cat.pos = c(-45, 45, 180),
+  cat.dist = c(0.055, 0.055, 0.02),
+  cat.fontfamily = "sans",
+  rotation = 1
+)
+
+# Note that the colors and field labels of the Venn diagram were manually adjusted
+# For contrast and clarity
+
+
+###################################################################################################################
+
+
+# Fig. 3B: heatmap
+
+# Relative counts for all fields
+data.rel <- transform_sample_counts(data.fall.sub, function(x) {x/sum(x)} * 100)
+
+# Selection of ASV IDs that match phylogenetic tree
+data.sel <- read.table("USfields-ITS2-Fsolani-heatmapIDs.txt", header = TRUE)
+data.sel <- as.vector(data.sel$ID)
+
+# Subset data
+data.sub <- subset(otu_table(data.rel), rownames(otu_table(data.rel)) %in% data.sel)
+
+data.sub <- merge_phyloseq(data.sub, tax_table(data.rel), sample_data(data.rel))
+
+# Into dataframe
+df.sub <- psmelt(data.sub)
+
+
+# Plots splitting healthy and infected plants per field
+# Average relative abundance per field
+newdf.f2h <- filter(df.sub, fieldcond == "2_Healthy")
+abun.avg.f2h <- group_by(newdf.f2h, OTU) %>% summarize(abun.avg.f2h = mean(Abundance))
+abun.avg.f2h$condition <- "Healthy"
+
+newdf.f2i <- filter(df.sub, fieldcond == "2_Infected")
+abun.avg.f2i <- group_by(newdf.f2i, OTU) %>% summarize(abun.avg.f2i = mean(Abundance))
+abun.avg.f2i$condition <- "Infected"
+
+newdf.f3h <- filter(df.sub, fieldcond == "3_Healthy")
+abun.avg.f3h <- group_by(newdf.f3h, OTU) %>% summarize(abun.avg.f3h = mean(Abundance))
+abun.avg.f3h$condition <- "Healthy"
+
+newdf.f3i <- filter(df.sub, fieldcond == "3_Infected")
+abun.avg.f3i <- group_by(newdf.f3i, OTU) %>% summarize(abun.avg.f3i = mean(Abundance))
+abun.avg.f3i$condition <- "Infected"
+
+newdf.f4h <- filter(df.sub, fieldcond == "4_Healthy")
+abun.avg.f4h <- group_by(newdf.f4h, OTU) %>% summarize(abun.avg.f4h = mean(Abundance))
+abun.avg.f4h$condition <- "Healthy"
+
+newdf.f4i <- filter(df.sub, fieldcond == "4_Infected")
+abun.avg.f4i <- group_by(newdf.f4i, OTU) %>% summarize(abun.avg.f4i = mean(Abundance))
+abun.avg.f4i$condition <- "Infected"
+
+
+# Relevant info to new dataframe
+abun.avg.combined <- c(abun.avg.f2h$abun.avg.f2h, abun.avg.f2i$abun.avg.f2i,
+                       abun.avg.f3h$abun.avg.f3h, abun.avg.f3i$abun.avg.f3i,
+                       abun.avg.f4h$abun.avg.f4h, abun.avg.f4i$abun.avg.f4i)
+
+IDs.combined <- c(abun.avg.f2h$OTU, abun.avg.f3h$OTU, abun.avg.f4h$OTU,
+                  abun.avg.f2i$OTU, abun.avg.f3i$OTU, abun.avg.f4i$OTU)
+
+field.combined <- sort(rep(c(2:4), times = 2*54))
+
+condition.h <- rep("Healthy", times = 54)
+condition.i <- rep("Infected", times = 54)
+condition.combined <- c(condition.h, condition.i)
+
+data.combined <- as.data.frame(cbind(IDs.combined, abun.avg.combined, field.combined, condition.combined))
+colnames(data.combined) <- c("ID", "Abundance", "Field", "Condition")
+
+
+# Add NCBI IDs
+NCBI.ID <- read.table("USfields-ITS2-Fsolani-extra-heatmapIDs.txt", header = TRUE)
+NCBI.ID <- as.character(NCBI.ID$ID)
+
+NCBI.ID.rep <- rep(NCBI.ID, times = 6)
+
+NCBI.Abundance <- rep(0, times = length(NCBI.ID.rep))
+NCBI.field <- sort(rep(c(2:4), times = 2*length(NCBI.ID)))
+
+NCBI.h <- rep("Healthy", times = length(NCBI.ID))
+NCBI.i <- rep("Infected", times = length(NCBI.ID))
+NCBI.hi <- c(NCBI.h, NCBI.i)
+
+NCBI.combined <- as.data.frame(cbind(NCBI.ID.rep, NCBI.Abundance, NCBI.field, NCBI.hi))
+colnames(NCBI.combined) <- c("ID", "Abundance", "Field", "Condition")
+
+data.plot <- rbind(data.combined, NCBI.combined)
+data.plot$Abundance <- as.numeric(as.character(data.plot$Abundance))
+
+
+# Add relevant taxonomy to sort by
+tax.sort <- read.table("USFall-ITS2-Fsolani-NCBI-tax-updated.txt", header = TRUE)
+
+data.plot$order <- tax.sort$order[match(data.plot$ID, tax.sort$ID)]
+data.plot$tax <- tax.sort$tax[match(data.plot$ID, tax.sort$ID)]
+data.plot$f2 <- tax.sort$f2[match(data.plot$ID, tax.sort$ID)]
+data.plot$f3 <- tax.sort$f3[match(data.plot$ID, tax.sort$ID)]
+data.plot$f4 <- tax.sort$f4[match(data.plot$ID, tax.sort$ID)]
+data.plot$NCBI <- tax.sort$NCBI[match(data.plot$ID, tax.sort$ID)]
+
+# Sort data by order
+data.plot <- data.plot[order(data.plot$order),]
+
+
+# Plot
+mapcol <- rev(c(colorspace::sequential_hcl(5, palette = "BurgYl"), "#F9F9F9"))
+
+ann.colors <- list(
+  NCBI = c(Yes = "#ffd97f", No = "#F0F0F0"),
+  f4 = c(Yes = "#8f8f8f", No = "#F0F0F0"),
+  f3 = c(Yes = "#8f8f8f", No = "#F0F0F0"),
+  f2 = c(Yes = "#8f8f8f", No = "#F0F0F0"))
+
+# Heatmap with all taxa
+# To create high abundance plot and legend
+mapphakop <- tidy_heatmap(df = data.plot,
+                          rows = tax,
+                          columns = c(Field, Condition),
+                          values = Abundance,
+                          #annotation_col = c(Field),
+                          annotation_row = c(f4, f3, f2, NCBI),
+                          cluster_rows = FALSE,
+                          gaps_col = Field,
+                          # cutree_rows = 7,
+                          annotation_colors = ann.colors,
+                          color_legend_n = 10,
+                          #colors = c("#20448c", "#ffedb5", "#d63113"),
+                          colors = mapcol,
+                          cellwidth = 15.0,
+                          cellheight = 10.0,
+                          angle_col= c("90"),
+                          display_numbers = FALSE,
+                          fontsize = 6,
+                          #clustering_distance_rows ="euclidean",
+                          show_colnames = TRUE,
+                          annotation_names_col = TRUE,
+                          width = 20,
+                          filename = "USFall-ITS2-Fusarium-heatmap-all-updated.pdf")
+
+
+# Plot without most abundant taxa
+`%!in%` <- Negate(`%in%`)
+ID.remove <- c("4be810915c915c3f6f34bb4fedab9ad0", "b663b0cd551ba980221251a789b6e206",
+               "461c2b20bd5c233dcac34fc89ce1a66f", "0ef57e8afd9085d240cb5ca96d3578ad")
+data.plot.sub <- subset(data.plot, ID %!in% ID.remove)
+
+fun.col.range <- colorRampPalette(c("#F9F9F9", "#3d3b3b"))
+mapcol <- fun.col.range(10)
+
+mapphakop <- tidy_heatmap(df = data.plot.sub,
+                          rows = tax,
+                          columns = c(Field, Condition),
+                          values = Abundance,
+                          #annotation_col = c(Field),
+                          #annotation_row = c(Structural_zero, Spearman, Simper, Fisher,
+                          #                   DESeq2, ANCOM),
+                          cluster_rows = FALSE,
+                          gaps_col = Field,
+                          # cutree_rows = 7,
+                          annotation_colors = ann.colors,
+                          color_legend_n = 10,
+                          #colors = c("#20448c", "#ffedb5", "#d63113"),
+                          colors = mapcol,
+                          cellwidth = 15.0,
+                          cellheight = 10.0,
+                          angle_col= c("90"),
+                          display_numbers = FALSE,
+                          fontsize = 6,
+                          #clustering_distance_rows ="euclidean",
+                          show_colnames = TRUE,
+                          annotation_names_col = TRUE,
+                          width = 20,
+                          filename = "USFall-ITS2-Fusarium-heatmap-grey-updated.pdf")
+
+# These two heatmaps were manually combined in InDesign
+# And the annotation showing presence/absence in each field moved and modified to match the colors in the Venn diagram
+
+
+###################################################################################################################
+
+
+# Fig. 3B: phylogenetic tree
+
+# Qime 2022.11
+
+# Determine phylogenetic relatedness between Fusarium solani ASVs
+# Across the three sequenced fields
+
+# Include NCBI sequences of F. solani, F. nematophilum and F. chlamydosporum ITS2 
+# NCBI sequences for Fusarium solani found like this:
+# (fusarium solani internal transcribed spacer 2) AND "Fusarium solani"[porgn:__txid169388] AND "complete sequence" 
+# Full list in table S...
+
+# Make sure all sequences are capitalized (https://convertcase.net/)
+
+qiime tools import \
+--input-path USFall-ITS2-Fsolani-repseqs-extra-edits-chlamnema.fasta \
+--type 'FeatureData[Sequence]' \
+--output-path USFall-ITS2-Fsolani-repseqs-extra-edits-chlamnema.qza
+
+qiime feature-table tabulate-seqs \
+  --i-data USFall-ITS2-Fsolani-repseqs-extra-edits-chlamnema.qza \
+  --o-visualization USFall-ITS2-Fsolani-repseqs-extra-edits-chlamnemas.qzv   
+
+# Alignment
+qiime phylogeny align-to-tree-mafft-fasttree \
+  --i-sequences USFall-ITS2-Fsolani-repseqs-extra-edits-chlamnema.qza \
+  --o-alignment phyl-aligned-USFall-ITS2-Fusariumonly-sequences-chlamnema.qza \
+  --o-masked-alignment phyl-mask-aligned-USFall-ITS2-Fusariumonly-sequences-chlamnema.qza \
+  --o-tree phyl-unrooted-USFall-ITS2-Fusariumonly-sequences-chlamnema.qza \
+  --o-rooted-tree phyl-rooted-USFall-ITS2-Fusariumonly-sequences-chlamnema.qza
+
+# Extract alignment
+qiime tools extract \
+  --input-path phyl-aligned-USFall-ITS2-Fusariumonly-sequences-chlamnema.qza \
+  --output-path phyl-aligned-USFall-ITS2-Fusariumonly-sequences-chlamnema
+  
+# Obtain the tree.nwk file from the created directory
+# Saved as tree-USFall-Fsolani-chlamnema-NCBI.nwk
+
+# Visualize alignment in iTOL (https://itol.embl.de/) and save to local machine
+# Add color labels and combine with heatmap in Adobe Illustrator
