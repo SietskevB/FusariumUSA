@@ -1,0 +1,325 @@
+# R 3.6.1
+
+library(phyloseq) # 1.30.0
+library(tibble) # 3.1.6
+library(ggplot2) # 3.4.2
+
+theme_set(theme_bw()) #sets background of plots to white with a grid
+theme_set(theme_classic()) #no grid
+
+
+###################################################################################################################
+
+
+# 16S
+
+setwd("/yourdirectory") # CHANGE ME
+
+metadata <- import_qiime_sample_data("USfields-16S-noblank-metadata.txt")
+
+# Data
+data <- import_biom(BIOMfilename = "repseqtable-filt-n27-195-16S-USfields-taxonomy.biom")
+data <- merge_phyloseq(data, metadata)
+colnames(tax_table(data)) <- c("Kingdom", "Phylum", "Class", "Order", "Family", "Genus", "Species")
+# 6428 ASVs
+
+# Exclude field 1
+data.fsub <- subset_samples(data, Field != 1)
+
+# Filter per field
+data.f2 <- subset_samples(data.fsub, Field == "2")
+data.f3 <- subset_samples(data.fsub, Field == "3")
+data.f4 <- subset_samples(data.fsub, Field == "4")
+
+# Data per field filtered for ASVs with zero counts
+data.f2 <- prune_taxa(taxa_sums(data.f2) > 0, data.f2) # 6189 ASVs
+data.f3 <- prune_taxa(taxa_sums(data.f3) > 0, data.f3) # 6016 ASVs
+data.f4 <- prune_taxa(taxa_sums(data.f4) > 0, data.f4) # 6269 ASVs
+
+# Excluding bulk
+data.f2.nb <- subset_samples(data.f2, Condition != "Soil")
+data.f3.nb <- subset_samples(data.f3, Condition != "Soil")
+data.f4.nb <- subset_samples(data.f4, Condition != "Soil")
+
+# Excluding ASVs not found in a field
+data.f2.nb <- filter_taxa(data.f2.nb, function(x) sum(x) > 0, TRUE) # 5947 ASVs
+data.f3.nb <- filter_taxa(data.f3.nb, function(x) sum(x) > 0, TRUE) # 5870 ASVs
+data.f4.nb <- filter_taxa(data.f4.nb, function(x) sum(x) > 0, TRUE) # 6177 ASVs
+
+
+# Determine and compare avg no. ASVs in healthy and infected
+# Per field
+feath <- subset_samples(data.f2.nb, Condition == "Healthy") # CHANGE ME for each field
+feath <- data.frame(otu_table(feath))
+feath <- data.frame(apply(feath > 0, 2, sum))
+colnames(feath) = "total_features"
+
+print(mean(feath$total_features)) # avg
+print(min(feath$total_features)) #  min
+print(max(feath$total_features)) # max
+
+std <- function(x) sd(x)/sqrt(length(x))
+std(feath$total_features)
+
+# Field 2: avg = 1717.2
+# Field 2: min = 425
+# Field 2: max = 2233
+# Field 2: sterr = 76.9
+
+# Field 3: avg = 1824.8
+# Field 3: min = 1122
+# Field 3: max = 2322
+# Field 3: sterr = 62.9
+
+# Field 4: avg = 1947.1
+# Field 4: min = 1582
+# Field 4: max = 2290
+# Field 4: sterr = 37.2
+
+feati <- subset_samples(data.f2.nb, Condition == "Infected") # CHANGE ME for each field
+feati <- data.frame(otu_table(feati))
+feati <- data.frame(apply(feati > 0, 2, sum))
+colnames(feati) = "total_features"
+
+mean(feati$total_features) # avg
+min(feati$total_features) #  min
+max(feati$total_features) # max
+std(feati$total_features)
+
+# Field 2: avg = 1594.4
+# Field 2: min = 843
+# Field 2: max = 2262
+# Field 2: sterr = 66.0
+
+# Field 3: avg = 1712.2
+# Field 3: min = 499
+# Field 3: max = 2243
+# Field 3: sterr = 72.8
+
+# Field 4: avg = 1882.6
+# Field 4: min = 1312
+# Field 4: max = 2271
+# Field 4: sterr = 39.1
+
+
+# Check data
+qqplot(feath$total_features,
+       feati$total_features)
+
+# Also check Shapiro Wilk
+shapiro.test(c(feath$total_features, feati$total_features))
+
+# Field 2: not normally distributed (p < 0.05)
+# Field 3: not normally distributed (p < 0.005)
+# Field 4: supposedly normally distributed (p = 0.478) but look at the QQ-plot
+
+# Welch two-sample t-test
+#t.test(x = feath$total_features,
+#       y = feati$total_features)
+
+# Non-parametric alternative for t-test
+# Mann Whitney Wilcoxon
+wilcox.test(x = feath$total_features,
+            y = feati$total_features)
+
+# Field 2: p = 0.120
+# Field 3: p = 0.284
+# Field 4: p = 0.366
+
+
+# Fig. S3A
+metadata$fieldcond <- paste(metadata$Field, metadata$Condition, sep = "_")
+
+feat <- subset_samples(data.fsub, Condition != "Soil")
+feat <- data.frame(otu_table(feat))
+feat <- data.frame(apply(feat > 0, 2, sum))
+
+feat <- rownames_to_column(feat, var = "ID")
+feat$fieldcond <- metadata$fieldcond[match(feat$ID, metadata$sampleid)]
+feat$field <- as.vector(metadata$Field[match(feat$ID, metadata$sampleid)])
+feat$field = feat$field -1
+
+colnames(feat) = c("ID", "total_features", "fieldcond", "field")
+
+
+plot <- ggplot(data = feat, aes(x = field, y = total_features, fill = fieldcond)) +
+  geom_boxplot(outlier.shape = NA) +
+  geom_point(aes(x = field, y = total_features, color = fieldcond), 
+             shape = 19, size = 2, position = position_jitterdodge(jitter.width = 0.1)) +
+  scale_fill_manual(name = "Sample Type", values = c("#F0ADC2", "#AD365B", "#A4DBD6", "#32847A",
+                                                     "#AAACE0", "#3E4082")) +
+  scale_color_manual(values = c(rep("black", times = length(unique(feat$ID))))) +
+  ylim(0, 2500) +
+  #theme(axis.text.x = element_text(angle = 90)) +
+  guides(color = "none")
+
+print(plot)
+
+ggsave("plot_box_16S_USFall_avgASVs.svg", plot, width = 380, height = 280, units = "mm", dpi = 1200)
+
+dev.off()
+
+
+###################################################################################################################
+
+
+# ITS2
+
+setwd("/yourdirectory") # CHANGE ME
+
+metadata <- import_qiime_sample_data("USFall-ITS2-metadata-noblank-decontam.txt")
+metadata$fieldcond <- paste(metadata$field, metadata$condition, sep = "_")
+
+# Data
+data.fall <- import_biom(BIOMfilename = "repseqtable-filtered-n4-53-UNITE3-USFall-ITS2-taxonomy.biom")
+
+data.fall <- merge_phyloseq(data.fall, metadata)
+colnames(tax_table(data.fall)) <- c("Kingdom", "Phylum", "Class", "Order", "Family", "Genus", "Species")
+# 254 unique ASVs
+
+# Filter samples with < 1061 reads
+# To exclude seq depth effect
+data.fall.filt <- prune_samples(sample_sums(data.fall)>=1061, data.fall)
+
+# Filter field 1
+# Because disease incidence was low
+# And symptoms difficult to identify as similar to fields 2-4
+data.fall.sub <- subset_samples(data.fall.filt, field != 1)
+
+# Data per field
+data.f2 <- subset_samples(data.fall.filt, field == 2)
+data.f3 <- subset_samples(data.fall.filt, field == 3)
+data.f4 <- subset_samples(data.fall.filt, field == 4)
+
+# Data per field filtered for ASVs with zero counts
+data.f2 <- prune_taxa(taxa_sums(data.f2) > 0, data.f2) # 187 ASVs
+data.f3 <- prune_taxa(taxa_sums(data.f3) > 0, data.f3) # 219 ASVs
+data.f4 <- prune_taxa(taxa_sums(data.f4) > 0, data.f4) # 169 ASVs
+
+# Data per field without bulk soil
+data.f2.nb <- subset_samples(data.f2, condition != "Soil")
+data.f3.nb <- subset_samples(data.f3, condition != "Soil")
+data.f4.nb <- subset_samples(data.f4, condition != "Soil")
+
+# Make sure there's no ASVs left with 0 counts
+data.f2.nb <- prune_taxa(taxa_sums(data.f2.nb) > 0, data.f2.nb) # 175 ASVs
+data.f3.nb <- prune_taxa(taxa_sums(data.f3.nb) > 0, data.f3.nb) # 212 ASVs
+data.f4.nb <- prune_taxa(taxa_sums(data.f4.nb) > 0, data.f4.nb) # 161 ASVs
+
+# And no samples with 0 ASV counts
+data.f2.nb <- prune_samples(sample_sums(data.f2.nb) >= 1, data.f2.nb)
+data.f3.nb <- prune_samples(sample_sums(data.f3.nb) >= 1, data.f3.nb)
+data.f4.nb <- prune_samples(sample_sums(data.f4.nb) >= 1, data.f4.nb)
+
+
+# Determine and compare avg no. ASVs in healthy and infected
+# Per field
+
+feath <- subset_samples(data.f2.nb, condition == "Healthy") # CHANGE ME for each field
+feath <- data.frame(otu_table(feath))
+feath <- data.frame(apply(feath > 0, 2, sum))
+colnames(feath) = "total_features"
+
+mean(feath$total_features)
+min(feath$total_features)
+max(feath$total_features)
+
+std <- function(x) sd(x)/sqrt(length(x))
+std(feath$total_features)
+
+# Field 2: avg = 17.5
+# Field 2: min = 9
+# Field 2: max = 29
+# Field 2: sterr = 0.91
+
+# Field 3: avg = 16.3
+# Field 3: min = 8
+# Field 3: max = 26
+# Field 3: sterr = 0.78
+
+# Field 4: avg = 12.5
+# Field 4: min = 8
+# Field 4: max = 22
+# Field 4: sterr = 0.8
+
+feati <- subset_samples(data.f2.nb, condition == "Infected") # CHANGE ME for each field
+feati <- data.frame(otu_table(feati))
+feati <- data.frame(apply(feati > 0, 2, sum))
+colnames(feati) = "total_features"
+
+mean(feati$total_features)
+min(feati$total_features)
+max(feati$total_features)
+std(feati$total_features)
+
+# Field 2: avg = 15.6
+# Field 2: min = 10
+# Field 2: max = 26
+# Field 2: sterr = 0.76
+
+# Field 3: avg = 19.0
+# Field 3: min = 5
+# Field 3: max = 39
+# Field 3: sterr = 1.15
+
+# Field 4: avg = 16.2
+# Field 4: min = 10
+# Field 4: max = 28
+# Field 4: sterr = 1.2
+
+
+# Check data
+qqplot(feath$total_features,
+       feati$total_features)
+
+# Also check Shapiro Wilk
+shapiro.test(c(feath$total_features, feati$total_features))
+
+# Field 2: not normally distributed (p < 0.001)
+# Field 3: not normally distributed (p < 0.001)
+# Field 4: not normally distributed (p < 0.001)
+
+# Non-parametric alternative for t-test
+# Mann Whitney Wilcoxon
+wilcox.test(x = feath$total_features,
+            y = feati$total_features)
+
+# Field 2: p = 0.123
+# Field 3: p = 0.031 * ; more ASVs on average in infected rhizosphere
+# Field 4: p = 0.021 * ; more ASVs on average in infected rhizosphere
+
+
+# Fig. S3B
+feat <- subset_samples(data.fall.sub, condition != "Soil")
+feat <- data.frame(otu_table(feat))
+feat <- data.frame(apply(feat > 0, 2, sum))
+
+feat <- rownames_to_column(feat, var = "ID")
+feat$fieldcond <- metadata$fieldcond[match(feat$ID, metadata$sampleid)]
+feat$field <- as.vector(metadata$field[match(feat$ID, metadata$sampleid)])
+feat$field = feat$field -1
+
+colnames(feat) = c("ID", "total_features", "fieldcond", "field")
+
+
+plot <- ggplot(data = feat, aes(x = field, y = total_features, fill = fieldcond)) +
+  geom_boxplot(outlier.shape = NA) +
+  geom_point(aes(x = field, y = total_features, color = fieldcond), 
+             shape = 19, size = 2, position = position_jitterdodge(jitter.width = 0.1)) +
+  scale_fill_manual(name = "Sample Type", values = c("#F0ADC2", "#AD365B", "#A4DBD6", "#32847A",
+      "#AAACE0", "#3E4082")) +
+  scale_color_manual(values = c(rep("black", times = length(unique(feat$ID))))) +
+  ylim(0, 40) +
+  guides(color = "none")
+
+print(plot)
+
+ggsave("plot_box_ITS2_USFall_avgASVs.svg", plot, width = 380, height = 280, units = "mm", dpi = 1200)
+
+dev.off()
+
+
+###################################################################################################################
+
+
+# Plots were combined and modified in layout in Adobe Illustrator
