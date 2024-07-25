@@ -14,11 +14,11 @@ rename  's/NS\.1671\.002\.FLD_ill_[0-9][0-9][0-9]i7---IDT_i5[0-9]\.//' *
 ############################################################################################################################  
 
 
-# R version 4.2.2
-# Remove amplification primer sequences
+# Start in R
+# To remove amplification primer sequences
+# Note: samples demultiplexed by seq company, index primer seqs already removed
 # And trim sequences based on quality scores
 # And run a custom DADA2
-# Note: samples demultiplexed by seq company, index primer seqs already removed
 
 # Use custom DADA2 because NovaSeq data has binned quality scores 
 # This requires separate error learning prior to DADA2
@@ -28,6 +28,8 @@ rename  's/NS\.1671\.002\.FLD_ill_[0-9][0-9][0-9]i7---IDT_i5[0-9]\.//' *
 # Many lines of code and clarifying comments in the workflow are his
 # https://benjjneb.github.io/dada2/ITS_workflow.html
 
+# R version 4.2.2
+
 library("Matrix") # 1.5.4
 library(ShortRead) # 1.54.0
 library("dplyr") # 1.1.2
@@ -36,6 +38,7 @@ library(Biostrings) # 2.64.1
 library("tidyverse") # 2.0.0
 library("digest") # 0.6.31
 library("phylotools") # 0.2.2
+
 
 setwd("/yourdirectory/")
 
@@ -145,6 +148,10 @@ pdf("quality-ITS-FW.pdf")
 plotQualityProfile(cutFs[rand_samples])
 dev.off() 
 
+pdf("USFields-ITS2-RV.pdf") 
+plotQualityProfile(cutRs[rand_samples])
+dev.off()
+
 
 ############################################################################################################################
 
@@ -163,11 +170,6 @@ out <- filterAndTrim(cutFs, filtFs, cutRs, filtRs, maxN = 0, maxEE = c(2, 2), tr
 # Check output
 head(out)
 
-# Save the output from filtering for later use
-saveRDS(out, "/yourdirectory/out.rds")
-saveRDS(filtFs, "/yourdirectory/filtFs.rds")
-saveRDS(filtRs, "/yourdirectory/filtRs.rds")
-
 
 ############################################################################################################################
 
@@ -184,10 +186,6 @@ path.filt <- file.path(path.cut, "filtered")
 
 errF <- learnErrors(filtFs, nbases = 1e+08, errorEstimationFunction = loessErrfun_modjona_mono, multithread=TRUE, verbose = TRUE)
 errR <- learnErrors(filtRs, nbases = 1e+08, errorEstimationFunction = loessErrfun_modjona_mono, multithread=TRUE, verbose = TRUE)
-
-# Save the error rates for later use
-saveRDS(errF, "/yourdirectory/errF.rds")
-saveRDS(errR, "/yourdirectory/errR.rds")
 
 # Plot the error rates to check
 # Default nbases
@@ -209,7 +207,7 @@ dadaFs <- dada(
   err = errF,
   selfConsist = TRUE,
   pool = FALSE,
-  errorEstimationFunction = loessErrfun_modjona_mono, # function below
+  errorEstimationFunction = loessErrfun_modjona_mono, # function at end of this file
   multithread = TRUE, 
   verbose = TRUE
 )
@@ -220,15 +218,10 @@ dadaRs <- dada(
   err = errR,
   selfConsist = TRUE,
   pool = FALSE,
-  errorEstimationFunction = loessErrfun_modjona_mono, # function below
+  errorEstimationFunction = loessErrfun_modjona_mono, # function at end of this file
   multithread = TRUE, 
   verbose = TRUE
 )
-
-
-# Save the output from DADA2 for later use
-saveRDS(dadaFs, "/yourdirectory/dadaFs.rds")
-saveRDS(dadaRs, "/yourdirectory/dadaRs.rds")
 
 
 # Plot errors from DADA2 incl. monotonicity
@@ -248,9 +241,6 @@ dev.off()
 mergers <- mergePairs(dadaFs, filtFs, dadaRs, filtRs, verbose=TRUE)
 # Inspect the merger data.frame from the first sample
 head(mergers[[1]])
-
-# Save the merged output for later use
-saveRDS(mergers, "/yourdirectory/mergers.rds")
 
 # Create feature table
 seqtab <- makeSequenceTable(mergers)
@@ -272,9 +262,6 @@ seqtab.nochim <- removeBimeraDenovo(seqtab, method="consensus", multithread=TRUE
 # sum(seqtab.nochim)/sum(seqtab)
 # 0.9937952 = frequency of non-chimeric merged sequences in the dataset
 
-# Save the feature table without chimeras for later use
-saveRDS(seqtab.nochim, "/yourdirectory/seqtab.nochim.rds")
-
 
 # Final check: number of reads that made it through each step in the pipeline from DADA2
 getN <- function(x) sum(getUniques(x))
@@ -284,7 +271,7 @@ colnames(track) <- c("input", "filtered", "denoisedF", "denoisedR", "merged", "n
 rownames(track) <- sample.names
 head(track)
 
-write.csv(track, file = "USFall-ITS2-DADA2-notrim-output.csv")
+write.csv(track, file = "USFall-ITS2-DADA2.csv")
 
 
 ############################################################################################################################
@@ -307,10 +294,6 @@ uniquesToFasta(seqtab.nochim, fout="USFall-ITS2-repseqs.fasta", ids=colnames(seq
 
 # Replace sequence names in .fasta to hash
 rename.fasta(infile = "USFall-ITS2-repseqs.fasta", ref_table = seqtab.hash, outfile = "USFall-ITS2-repseqs-hash.fasta")
-
-# Check output
-# check <- import.fasta("USFall-ITS2-repseqs-hash.fasta", aa.to.upper = TRUE, gap.to.dash = TRUE, log.file = NULL)
-
 
 # Add hash codes to feature table
 seqtab.nochim.hash <- t(seqtab.nochim)
