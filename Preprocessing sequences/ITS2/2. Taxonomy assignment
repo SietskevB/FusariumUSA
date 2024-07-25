@@ -2,7 +2,7 @@
 
 # Trimmed, filtered sequences, exported after DADA2
 qiime tools import \
---input-path USFall-ITS2-repseqs-hash.fasta \
+--input-path USFall-ITS2-seq-hash.fasta \
 --type 'FeatureData[Sequence]' \
 --output-path repseq-ITS2-USFall.qza
 
@@ -75,15 +75,3 @@ qiime taxa barplot \
 qiime metadata tabulate \
   --m-input-file classification-UNITE3-ITS2-USFall.qza \
   --o-visualization classification-UNITE3-ITS2-USFall.qzv
-
-
-# < 1 - 73.11% unassigned reads per sample
-# 0 - 28.09% Viridiplantae per sample
-# 0 - 82.34% Rhizaria per sample
-# 0 - 21.72% Metazoa per sample
-# 0 - 83.64% Alveolata per sample
-# 0 - 5.85% Chromista per sample
-# 0 - 6.85% Amoebozoa per sample
-# 0 - 25.34% k__Eukaryota_kgd_Incertae_sedis per sample
-# 0 - 5.32% Stramenopila per sample
-# 2.80 - 99.91% Fungi per sample
