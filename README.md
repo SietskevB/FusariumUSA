@@ -1,7 +1,7 @@
 # MANUSCRIPT TITLE
 
-This repository contains code and files that support the analyses presented in MANUSCRIPT TITLE.
-Raw sequencing data can be found LINK.
+This repository contains code and files that support the analyses presented in "Impact of natural Fusarium infection on the rhizosphere microbiome of field-grown soybean plants".
+Raw sequencing data will be provided at a later time.
 
 The ITS2 and 16S data was preprocessed separately. Therefore, in directory "Preprocessing", there is one directory for ITS2 and one for 16S preprocessing steps.
 Directory "Figures and tables" contains code and files used for the figures and tables in the manuscript.
