@@ -1,4 +1,4 @@
-# MANUSCRIPT TITLE
+# Impact of natural Fusarium infection on the rhizosphere microbiome of field-grown soybean plants
 
 This repository contains code and files that support the analyses presented in "Impact of natural Fusarium infection on the rhizosphere microbiome of field-grown soybean plants".
 Raw sequencing data will be provided at a later time.
