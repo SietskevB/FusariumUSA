@@ -1,0 +1,66 @@
+# R 3.6.1
+
+library(phyloseq) # 1.30.0
+library(ggplot2) # 3.4.2
+
+theme_set(theme_bw()) #sets background of plots to white with a grid
+theme_set(theme_classic()) #no grid
+
+setwd("yourdirectory") # CHANGE ME
+
+
+###################################################################################################################
+
+
+metadata <- import_qiime_sample_data("USFall-ITS2-metadata-noblank-decontam.txt")
+metadata$fieldcond <- paste(metadata$field, metadata$condition, sep = "_")
+
+data.fall <- import_biom(BIOMfilename = "repseqtable-filtered-n4-53-UNITE3-USFall-ITS2-taxonomy.biom")
+data.fall <- merge_phyloseq(data.fall, metadata)
+colnames(tax_table(data.fall)) <- c("Kingdom", "Phylum", "Class", "Order", "Family", "Genus", "Species")
+
+# Filter samples with < 1061 reads
+# As determined based on explorative PCoAs in Qiime2
+data.fall.filt <- prune_samples(sample_sums(data.fall)>=1061, data.fall)
+
+# Filter field 1
+data.fall.sub <- subset_samples(data.fall.filt, field != 1)
+
+# Data per field
+data.f2 <- subset_samples(data.fall.filt, field == 2)
+data.f3 <- subset_samples(data.fall.filt, field == 3)
+data.f4 <- subset_samples(data.fall.filt, field == 4)
+
+# Data per field filtered for ASVs with zero counts
+data.f2 <- prune_taxa(taxa_sums(data.f2) > 0, data.f2) # 187 ASVs
+data.f3 <- prune_taxa(taxa_sums(data.f3) > 0, data.f3) # 219 ASVs
+data.f4 <- prune_taxa(taxa_sums(data.f4) > 0, data.f4) # 169 ASVs
+
+
+###################################################################################################################
+
+
+# Plot abundance-frequency distribution for all ASVs per field
+# Adjust to use for each field
+
+data <- data.frame(otu_table(data.f2)) # CHANGE ME per field
+
+# Calculate frequency per ASV (no. samples detected)
+data$count <- rowSums(data > 0)
+
+# Plot
+plot <- ggplot(data, aes(x=count)) +
+  geom_histogram(binwidth=0.9, fill="#AD365B", color="#e9ecef", alpha=0.9, boundary = 0) + # field 2
+  #geom_histogram(binwidth=0.9, fill="#32847A", color="#e9ecef", alpha=0.9, boundary = 0) + # field 3
+  #geom_histogram(binwidth=0.9, fill="#3E4082", color="#e9ecef", alpha=0.9, boundary = 0) + # field 4
+  xlab("\nNo. samples observed") +
+  ylab("No. ASVs\n") +
+  #ggtitle("Field 4") + # CHANGE ME
+  #ylim(0,80) + # field 4
+  theme(text = element_text(size = 28))
+
+print(plot)
+
+ggsave("plot_USF2_ITS2_freqocc.svg", plot, width = 340, height = 280, units = "mm", dpi = 1200) # CHANGE ME per field
+
+dev.off()
