@@ -1,0 +1,288 @@
+# R 3.6.1
+
+library(phyloseq) # 1.30.0
+library(ggplot2) # 3.4.2
+library(tibble) # 3.1.6
+library(scales) # 1.2.1
+
+theme_set(theme_bw()) #sets background of plots to white with a grid
+theme_set(theme_classic()) #no grid
+
+
+###################################################################################################################
+
+
+# Compare average read depth healthy vs infected
+# Bulk excluded
+# 16S
+
+setwd("yourdirectory") # CHANGE ME
+
+metadata <- import_qiime_sample_data("USfields-16S-noblank-metadata.txt")
+
+# Data
+# All fields, incl. bulk
+
+data <- import_biom(BIOMfilename = "repseqtable-filt-n27-195-16S-USfields-taxonomy.biom")
+data <- merge_phyloseq(data, metadata)
+colnames(tax_table(data)) <- c("Kingdom", "Phylum", "Class", "Order", "Family", "Genus", "Species")
+# 6428 ASVs
+
+# Exclude field 1
+data.fsub <- subset_samples(data, Field != 1)
+
+# Filter per field
+data.f2 <- subset_samples(data.fsub, Field == "2")
+data.f3 <- subset_samples(data.fsub, Field == "3")
+data.f4 <- subset_samples(data.fsub, Field == "4")
+
+# Data per field filtered for ASVs with zero counts
+data.f2 <- prune_taxa(taxa_sums(data.f2) > 0, data.f2) # 6189 ASVs
+data.f3 <- prune_taxa(taxa_sums(data.f3) > 0, data.f3) # 6016 ASVs
+data.f4 <- prune_taxa(taxa_sums(data.f4) > 0, data.f4) # 6269 ASVs
+
+# Excluding bulk
+data.f2.nb <- subset_samples(data.f2, Condition != "Soil")
+data.f3.nb <- subset_samples(data.f3, Condition != "Soil")
+data.f4.nb <- subset_samples(data.f4, Condition != "Soil")
+
+# Excluding ASVs not found in a field
+data.f2.nb <- filter_taxa(data.f2.nb, function(x) sum(x) > 0, TRUE) # 5947 ASVs
+data.f3.nb <- filter_taxa(data.f3.nb, function(x) sum(x) > 0, TRUE) # 5870 ASVs
+data.f4.nb <- filter_taxa(data.f4.nb, function(x) sum(x) > 0, TRUE) # 6177 ASVs
+
+
+# Stats and plots
+data <- data.frame(t(otu_table(data.f2.nb))) # CHANGE ME for each field
+data$total <- rowSums(data)
+data <- rownames_to_column(data, var = "sampleid")
+
+data.sub <- data[c("sampleid", "total")]
+data.sub$Condition <- metadata$Condition[match(data.sub$sampleid, metadata$sampleid)]
+
+# Check data
+qqplot(data.sub$total[which(data.sub$Condition == "Healthy")],
+       data.sub$total[which(data.sub$Condition == "Infected")])
+
+# Also check Shapiro Wilk
+shapiro.test(data.sub$total)
+# Field 2: not normally distributed (p = 0.036)
+# Field 3: normally distributed (p = 0.128) but qqplot is not convincing
+# Field 4: not normally distributed (p < 0.00001)
+
+# Non-parametric alternative for t-test
+# Mann Whitney Wilcoxon
+wilcox.test(x = data.sub$total[which(data.sub$Condition == "Healthy")],
+            y = data.sub$total[which(data.sub$Condition== "Infected")])
+# Field 2: p = 0.471
+# Field 3: p = 0.219
+# Field 4: p = 0.597
+
+
+# Fig. S1A
+plot <- ggplot(data.sub, aes(x = Condition, y = total, fill = Condition)) +
+  geom_violin() +
+  scale_fill_manual(name = "Sample Type", 
+                    labels = c("Healthy", "Diseased"),
+                    values = c("#F0ADC2", "#AD365B")) + 
+  geom_jitter(shape = 19, size= 5, position = position_jitter(0.07)) +
+  theme(axis.title.x = element_blank()) +
+  ylab ("No. reads per sample\n") +
+  scale_y_continuous(labels = comma,
+                     limits = c(0, 100000)) + 
+  theme(legend.text = element_text(size = 28), legend.box.margin = margin(0, 0, 0, 2, "cm")) +
+  theme(text = element_text(size = 28)) +
+  theme(axis.text = element_text(size = 28))
+
+plot
+
+ggsave("plot_field2_16S_avgseqdepth.svg", plot, width = 320, height = 280, units = "mm", dpi = 1200)
+
+dev.off()
+
+
+# Plot S1B
+plot <- ggplot(data.sub, aes(x = Condition, y = total, fill = Condition)) +
+  geom_violin() +
+  scale_fill_manual(name = "Sample Type", 
+                    labels = c("Healthy", "Diseased"),
+                    values = c("#32847a", "#a4dbd6")) + 
+  geom_jitter(shape = 19, size= 5, position = position_jitter(0.07)) +
+  theme(axis.title.x = element_blank()) +
+  ylab ("No. reads per sample\n") +
+  scale_y_continuous(labels = comma,
+                     limits = c(0, 80000)) + 
+  theme(legend.text = element_text(size = 28), legend.box.margin = margin(0, 0, 0, 2, "cm")) +
+  theme(text = element_text(size = 28)) +
+  theme(axis.text = element_text(size = 28))
+
+plot
+
+ggsave("plot_field3_16S_avgseqdepth.svg", plot, width = 320, height = 280, units = "mm", dpi = 1200)
+
+dev.off()
+
+
+# Plot S1C
+plot <- ggplot(data.sub, aes(x = Condition, y = total, fill = Condition)) +
+  geom_violin() +
+  scale_fill_manual(name = "Sample Type", 
+                    labels = c("Healthy", "Diseased"),
+                    values = c("#3E4082", "#AAACE0")) + 
+  geom_jitter(shape = 19, size= 5, position = position_jitter(0.07)) +
+  theme(axis.title.x = element_blank()) +
+  ylab ("No. reads per sample\n") +
+  scale_y_continuous(labels = comma,
+                     limits = c(0, 125000)) + 
+  theme(legend.text = element_text(size = 28), legend.box.margin = margin(0, 0, 0, 2, "cm")) +
+  theme(text = element_text(size = 28)) +
+  theme(axis.text = element_text(size = 28))
+
+plot
+
+ggsave("plot_field4_16S_avgseqdepth.svg", plot, width = 320, height = 280, units = "mm", dpi = 1200)
+
+dev.off()
+
+
+###################################################################################################################
+
+
+# Compare average read depth healthy vs infected
+# Bulk excluded
+# ITS2
+
+setwd("yourdirectory") # CHANGE ME
+
+metadata <- import_qiime_sample_data("USFall-ITS2-metadata-noblank-decontam.txt")
+metadata$fieldcond <- paste(metadata$field, metadata$condition, sep = "_")
+
+# Data
+data.fall <- import_biom(BIOMfilename = "repseqtable-filtered-n4-53-UNITE3-USFall-ITS2-taxonomy.biom")
+data.fall <- merge_phyloseq(data.fall, metadata)
+colnames(tax_table(data.fall)) <- c("Kingdom", "Phylum", "Class", "Order", "Family", "Genus", "Species")
+
+# Filter samples with < 1061 reads
+# As determined based on explorative PCoAs in Qiime2
+data.fall.filt <- prune_samples(sample_sums(data.fall)>=1061, data.fall)
+
+# Filter field 1
+data.fall.sub <- subset_samples(data.fall.filt, field != 1)
+
+# Data per field
+data.f2 <- subset_samples(data.fall.filt, field == 2)
+data.f3 <- subset_samples(data.fall.filt, field == 3)
+data.f4 <- subset_samples(data.fall.filt, field == 4)
+
+# Data per field filtered for ASVs with zero counts
+data.f2 <- prune_taxa(taxa_sums(data.f2) > 0, data.f2) # 187 ASVs
+data.f3 <- prune_taxa(taxa_sums(data.f3) > 0, data.f3) # 219 ASVs
+data.f4 <- prune_taxa(taxa_sums(data.f4) > 0, data.f4) # 169 ASVs
+
+# Data per field without bulk soil
+data.f2.nb <- subset_samples(data.f2, condition != "Soil")
+data.f3.nb <- subset_samples(data.f3, condition != "Soil")
+data.f4.nb <- subset_samples(data.f4, condition != "Soil")
+
+# Make sure there's no ASVs left with 0 counts
+data.f2.nb <- prune_taxa(taxa_sums(data.f2.nb) > 0, data.f2.nb) # 175 ASVs
+data.f3.nb <- prune_taxa(taxa_sums(data.f3.nb) > 0, data.f3.nb) # 212 ASVs
+data.f4.nb <- prune_taxa(taxa_sums(data.f4.nb) > 0, data.f4.nb) # 161 ASVs
+
+# And no samples with 0 ASV counts
+data.f2.nb <- prune_samples(sample_sums(data.f2.nb) >= 1, data.f2.nb)
+data.f3.nb <- prune_samples(sample_sums(data.f3.nb) >= 1, data.f3.nb)
+data.f4.nb <- prune_samples(sample_sums(data.f4.nb) >= 1, data.f4.nb)
+
+
+# Stats and plots
+data <- data.frame(t(otu_table(data.f2.nb))) # CHANGE ME for each field
+data$total <- rowSums(data)
+data <- rownames_to_column(data, var = "sampleid")
+
+data.sub <- data[c("sampleid", "total")]
+data.sub$Condition <- metadata$condition[match(data.sub$sampleid, metadata$sampleid)]
+
+# Check data
+qqplot(data.sub$total[which(data.sub$Condition == "Healthy")],
+       data.sub$total[which(data.sub$Condition == "Infected")])
+
+# Also check Shapiro Wilk
+shapiro.test(data.sub$total)
+# Field 2: not normally distributed (p < 0.0005) 
+# Field 3: not normally distributed (p < 0.005) 
+# Field 4: not normally distributed (p < 0.00001)
+
+# Non-parametric alternative for t-test
+# Mann Whitney Wilcoxon
+wilcox.test(x = data.sub$total[which(data.sub$Condition == "Healthy")],
+            y = data.sub$total[which(data.sub$Condition== "Infected")])
+# Field 2: p > 0.5
+# Field 3: p > 0.5
+# Field 4: p > 0.5
+
+
+# Fig. S1D (field 2)
+plot <- ggplot(data.sub, aes(x = Condition, y = total, fill = Condition)) +
+  geom_violin() +
+  scale_fill_manual(name = "Sample Type", 
+                    labels = c("Healthy", "Diseased"),
+                    values = c("#F0ADC2", "#AD365B")) + 
+  geom_jitter(shape = 19, size= 5, position = position_jitter(0.07)) +
+  theme(axis.title.x = element_blank()) +
+  ylab ("No. reads per sample\n") +
+  scale_y_continuous(labels = comma,
+                     limits = c(0, 150000)) + 
+  theme(legend.text = element_text(size = 28), legend.box.margin = margin(0, 0, 0, 2, "cm")) +
+  theme(text = element_text(size = 28)) +
+  theme(axis.text = element_text(size = 28))
+
+plot
+
+ggsave("plot_field2_ITS2_avgseqdepth.svg", plot, width = 320, height = 280, units = "mm", dpi = 1200)
+
+dev.off()
+
+
+# Plot S1E (field 3)
+plot <- ggplot(data.sub, aes(x = Condition, y = total, fill = Condition)) +
+  geom_violin() +
+  scale_fill_manual(name = "Sample Type", 
+                    labels = c("Healthy", "Diseased"),
+                    values = c("#32847a", "#a4dbd6")) + 
+  geom_jitter(shape = 19, size= 5, position = position_jitter(0.07)) +
+  theme(axis.title.x = element_blank()) +
+  ylab ("No. reads per sample\n") +
+  scale_y_continuous(labels = comma,
+                     limits = c(0, 100000)) + 
+  theme(legend.text = element_text(size = 28), legend.box.margin = margin(0, 0, 0, 2, "cm")) +
+  theme(text = element_text(size = 28)) +
+  theme(axis.text = element_text(size = 28))
+
+plot
+
+ggsave("plot_field3_ITS2_avgseqdepth.svg", plot, width = 320, height = 280, units = "mm", dpi = 1200)
+
+dev.off()
+
+
+# Plot S1F (field 4)
+plot <- ggplot(data.sub, aes(x = Condition, y = total, fill = Condition)) +
+  geom_violin() +
+  scale_fill_manual(name = "Sample Type", 
+                    labels = c("Healthy", "Diseased"),
+                    values = c("#3E4082", "#AAACE0")) + 
+  geom_jitter(shape = 19, size= 5, position = position_jitter(0.07)) +
+  theme(axis.title.x = element_blank()) +
+  ylab ("No. reads per sample\n") +
+  scale_y_continuous(labels = comma,
+                     limits = c(0, 150000)) + 
+  theme(legend.text = element_text(size = 28), legend.box.margin = margin(0, 0, 0, 2, "cm")) +
+  theme(text = element_text(size = 28)) +
+  theme(axis.text = element_text(size = 28))
+
+plot
+
+ggsave("plot_field4_ITS2_avgseqdepth.svg", plot, width = 320, height = 280, units = "mm", dpi = 1200)
+
+dev.off()
