@@ -1,24 +1,8 @@
-
-# Need to rename sequencing files to import (later) in Qiime2
-# Run all following commands, check the number 1671
-# Final format should be like this: NS.1671.002.FLD_ill_170_i7---IDT_i5_5.F1D14_ITS2_L001_R1_001.fastq
-
-rename 's/_I1/_R1/' *
-rename 's/_I2/_R2/' *
-rename  's/_R1/_L001_R1_001/' *
-rename  's/_R2/_L001_R2_001/' *
-rename  's/NS\.1671\.002\.FLD_ill_[0-9][0-9][0-9]i7---IDT_i5[0-9][0-9]\.//' *
-rename  's/NS\.1671\.002\.FLD_ill_[0-9][0-9][0-9]i7---IDT_i5[0-9]\.//' *
-
-
-############################################################################################################################
-
-
-# Start in R
+# In R
 # To remove amplification primer sequences
-# Note: samples demultiplexed by seq company, index primer seqs already removed
-# Trim sequences based on quality scores
+# And trim sequences based on quality scores
 # And run a custom DADA2
+# Note: samples demultiplexed by seq company, index primer seqs already removed
 
 # Use custom DADA2 because NovaSeq data has binned quality scores 
 # This requires separate error learning prior to DADA2
@@ -40,7 +24,7 @@ library("digest") # 0.6.31
 library("phylotools") # 0.2.2
 
 
-setwd("/yourdirectory/")
+setwd("/yourdirectory/") # CHANGE ME
 
 
 ############################################################################################################################
