@@ -1,0 +1,15 @@
+ID
+Penicillium_36997
+Fusarium_tucumaniae_AY730910.1
+Fusarium_tucumaniae_AY220235.1
+Fusarium_virguliforme_AY730903.1
+Fusarium_virguliforme_AY730902.1
+Fusarium_virguliforme_AY730901.1
+Fusarium_solani_HQ651165.1
+Fusarium_solani_DQ094771.1
+Fusarium_solani_MW805303.1
+Fusarium_solani_KJ437432.1
+Fusarium_solani_ON248242
+Fusarium_solani_MH582400.1
+Fusarium_solani_NR_163531
+Fusarium_solani_KC808235.1
