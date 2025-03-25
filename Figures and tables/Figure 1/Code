@@ -1,11 +1,12 @@
 # R 3.6.1
 
 library(ggplot2) # 3.4.2
+library(colorspace) # 2.1.1
 
 theme_set(theme_bw())
 theme_set(theme_classic())
 
-setwd("yourdirectory") # CHANGE ME
+setwd("C:/Users/3797775/PhD/UU/Thesis/Chapter.Fusarium/Fusarium.manuscript") # CHANGE ME
 
 data <- read.table("USfields-disease-R-input.txt", header = TRUE)
 
@@ -13,15 +14,15 @@ data <- data[which(data$Condition == "Infected" & data$Plant_score != 0 & data$W
 data$Plant_score <- factor(as.character(data$Plant_score), levels = c("4", "3", "2", "1"))
 data$Worst_leaf <- factor(as.character(data$Worst_leaf), levels = c("1", "2", "3", "4"))
 
-mapcol <- c("#e5b798", "#c17e74", "#a06872", "#663d50")
-mapcolplant <- rev(sequential_hcl(5, palette = "Terrain 2"))
+mapcolplant <- rev(sequential_hcl(5, palette = "Terrain 2")) # plant-level plot
+mapcol <- c("#e5b798", "#c17e74", "#a06872", "#663d50") # leaf-level plot
 
-plot <- ggplot(data, aes(fill=Worst_leaf, y=Plant_percentage, x=Field)) + # CHANGE ME
+plot <- ggplot(data, aes(fill=Worst_leaf, y=Leaf_percentage, x=Field)) + # CHANGE ME
   geom_bar(position="stack", stat="identity") +
   scale_fill_manual(values = mapcol) + # CHANGE ME
   ylab("Percentage (%)")
 
-print(plot
+print(plot)
 
 ggsave(file="USFall-diseaseseverity-leafscore.svg", plot=plot, width=14, height=8) # CHANGE ME
 
