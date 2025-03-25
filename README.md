@@ -16,5 +16,7 @@ You can check the metadata for all fields, including the excluded field, in [USf
 In the files and code provided here, this excluded field was called "field 1".
 Fields 1-3 in the manuscript correspond to fields 2-4 in the files and code.
 
-**Because steps such as feature calling depend on all data that is supplied, the files here include the unpublished field (field 1 in the files on GitHub).
-These files are not included as raw sequencing data in the ENA!**
+**Because steps such as feature calling depend on all data that is supplied, the files and code provided here include the unpublished field.
+These files are not included as raw sequencing data at the ENA!**
+
+This complicates full replication of our seq data analysis from raw sequencing files. Attempts to update files and code only complicated matters more (e.g. changing the name of unpublished field 1 to field 4 would result in issues with the .qza-files from preprocessing steps, and all laborious steps would have to be completely repeated). We do hope you can either use the preprocessed reads (subsetting for fields 2-4 like we have) or create your own preprocessed reads with the raw sequencing data provided at ENA (do mind the naming of fields when running our code).
